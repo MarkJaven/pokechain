@@ -1,13 +1,15 @@
 /* General Reset */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&display=swap');
+
 body, html {
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow-x: hidden;
   font-family: 'Orbitron', sans-serif;
   height: 100%;
 }
 
-/* Background Video */
+/* Background Video - FIXED */
 .bg-video {
   position: fixed;
   top: 0;
@@ -16,109 +18,138 @@ body, html {
   height: 100%;
   object-fit: cover;
   z-index: -2;
+  opacity: 1;
 }
 
-/* Overlay */
+/* Overlay - ADJUSTED */
 .overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at center, rgba(0,0,0,0.3), rgba(0,0,0,0.9));
+  background: radial-gradient(circle at top left, rgba(11, 16, 37, 0.6), rgba(2, 6, 15, 0.85));
   z-index: -1;
 }
 
-/* Navbar */
+/* Navbar - Match Marketplace */
 .navbar {
-  background: rgba(0, 0, 0, 0.35) !important;
+  background: rgba(0, 0, 0, 0.4) !important;
   backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 1rem 3rem !important;
+}
+
+.navbar-brand {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.5rem !important;
 }
 
 .glow-text {
-  text-shadow: 0 0 6px #39ff14, 0 0 12px #39ff14;
+  text-shadow: none;
 }
 
-.glow-hover:hover {
-  color: #39ff14 !important;
-  text-shadow: 0 0 8px #39ff14, 0 0 16px #39ff14;
-  transition: all 0.3s ease-in-out;
+.nav-link {
+  color: rgba(255, 255, 255, 0.7) !important;
+  transition: color 0.2s ease;
+  font-weight: 500;
+}
+
+.glow-hover:hover,
+.nav-link:hover {
+  color: #00ff9d !important;
+  text-shadow: none;
 }
 
 /* Hero Section */
 .hero-section {
   position: relative;
   z-index: 1;
-  text-shadow: 0 0 10px rgba(0, 255, 100, 0.5);
+  overflow: visible;
 }
 
 .text-glow {
   color: #fff;
-  text-shadow: 0 0 10px #39ff14, 0 0 20px #39ff14, 0 0 30px #39ff14;
-  animation: fadeIn 1.5s ease-out forwards, softPulse 3s infinite alternate;
+  text-shadow: 0 4px 20px rgba(0, 255, 157, 0.3);
+  animation: fadeIn 1.5s ease-out forwards;
 }
 
-/* Button Styling */
+.text-warning {
+  color: #ffc107 !important;
+}
+
+.hero-section .lead {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+  font-size: 1.3rem;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+
+/* Button Styling - Match Marketplace */
 .btn-glow {
-  border: 2px solid #39ff14;
-  color: #39ff14;
-  background: transparent;
-  font-weight: bold;
+  border: 2px solid #00ff9d;
+  color: #00ff9d;
+  background: rgba(0, 255, 157, 0.1);
+  font-weight: 700;
   letter-spacing: 1px;
-  box-shadow: 0 0 10px rgba(57, 255, 20, 0.3);
-  transition: 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 255, 157, 0.2);
+  transition: all 0.3s ease;
+  border-radius: 10px;
+  font-family: 'Orbitron', sans-serif;
 }
 
 .btn-glow:hover {
-  background: #39ff14;
-  color: #000;
-  box-shadow: 0 0 20px rgba(57, 255, 20, 0.6);
+  background: linear-gradient(180deg, #00c474, #009d57);
+  color: #fff;
+  border-color: #00c474;
+  box-shadow: 0 6px 30px rgba(0, 255, 157, 0.4);
+  transform: translateY(-2px);
 }
 
-/* ✨ Animations */
+/* Animations */
 @keyframes fadeIn {
-  0% { opacity: 0; transform: translateY(20px); }
+  0% { opacity: 0; transform: translateY(30px); }
   100% { opacity: 1; transform: translateY(0); }
 }
 
-/* Softer Glow Pulse */
-@keyframes softPulse {
-  0%, 100% {
-    text-shadow: 0 0 10px #39ff14, 0 0 20px #39ff14;
-  }
-  50% {
-    text-shadow: 0 0 18px #9fff80, 0 0 28px #39ff14;
-  }
+/* Apply Animations */
+.hero-section h1 {
+  animation: fadeIn 1.2s ease-out forwards;
+  opacity: 0;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.8);
 }
 
-/* Apply Animations */
 .hero-section p {
-  animation: fadeIn 2s ease-out forwards;
+  animation: fadeIn 1.5s ease-out forwards;
   opacity: 0;
-  animation-delay: 0.8s;
+  animation-delay: 0.3s;
 }
 
 .btn-glow {
-  animation: fadeIn 2.5s ease-out forwards;
+  animation: fadeIn 1.8s ease-out forwards;
   opacity: 0;
-  animation-delay: 1.2s;
+  animation-delay: 0.6s;
 }
 
-/* Modal Styles */
+/* Modal Styles - Match Marketplace */
 .modal-content {
-  background: rgba(15, 15, 35, 0.95);
-  border: 2px solid rgba(57, 255, 20, 0.5);
+  background: linear-gradient(180deg, rgba(20, 20, 30, 0.98), rgba(10, 10, 20, 0.98));
+  border: 2px solid rgba(0, 255, 157, 0.2);
   border-radius: 20px;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(15px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
 }
 
 .modal-header {
-  border-bottom: 2px solid rgba(57, 255, 20, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1.5rem 2rem;
 }
 
 .modal-title {
-  color: #39ff14;
-  text-shadow: 0 0 8px #39ff14, 0 0 16px #39ff14;
+  color: #fff;
+  text-shadow: none;
+  font-weight: 800;
+  font-size: 1.3rem;
 }
 
 .btn-close {
@@ -136,35 +167,37 @@ body, html {
   color: white;
   font-weight: 700;
   padding: 15px 30px;
-  border-radius: 15px;
+  border-radius: 12px;
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 15px;
-  font-size: 1.1rem;
-  box-shadow: 0 0 20px rgba(246, 133, 27, 0.4);
+  font-size: 1rem;
+  box-shadow: 0 4px 20px rgba(246, 133, 27, 0.3);
+  font-family: 'Orbitron', sans-serif;
 }
 
 .btn-metamask:hover {
-  transform: scale(1.05);
-  box-shadow: 0 0 30px rgba(246, 133, 27, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(246, 133, 27, 0.5);
   background: linear-gradient(135deg, #e2761b 0%, #cd6116 100%);
+  filter: brightness(1.1);
 }
 
 .metamask-logo {
-  width: 40px;
-  height: 40px;
+  width: 35px;
+  height: 35px;
 }
 
 .modal-body {
-  padding: 40px;
+  padding: 2rem;
 }
 
 .modal-text {
-  color: #e0e0e0;
-  font-size: 1.1rem;
-  margin-bottom: 30px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  margin-bottom: 2rem;
   font-weight: 400;
 }
 
@@ -174,5 +207,33 @@ body, html {
 }
 
 .spinner-border {
-  color: #39ff14;
+  color: #00ff9d;
+  width: 3rem;
+  height: 3rem;
+}
+
+.loading-spinner p {
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 1rem;
+  font-size: 0.95rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 1rem 1.5rem !important;
+  }
+  
+  .hero-section h1 {
+    font-size: 3rem;
+  }
+  
+  .hero-section .lead {
+    font-size: 1.1rem;
+  }
+  
+  .btn-glow {
+    padding: 12px 40px !important;
+    font-size: 0.95rem;
+  }
 }

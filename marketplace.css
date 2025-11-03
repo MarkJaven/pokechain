@@ -1,0 +1,344 @@
+/* ====== PokeChain Marketplace Styles ======
+   - Fixed uniform card sizes
+   - Real Pokéball background image
+   - White common cards
+   =========================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&display=swap');
+
+:root {
+  --accent-green: #00ff9d;
+  --accent-blue: #3aa0ff;
+  --accent-purple: #c78aff;
+  --accent-gold: #ffd84d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: radial-gradient(circle at top left, #0b1025 0%, #02060f 100%);
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+.small-muted {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+/* ===== CARD GRID ===== */
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+  padding: 20px 0;
+}
+
+/* ===== CARD BASE - FIXED HEIGHT ===== */
+.market-card {
+  position: relative;
+  border-radius: 20px;
+  padding: 20px;
+  background: linear-gradient(180deg, rgba(20, 20, 30, 0.95), rgba(10, 10, 20, 0.9));
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  height: 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== POKÉBALL BACKGROUND - REAL IMAGE ===== */
+.market-card::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  height: 200px;
+  background-image: url('images/pokeball.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.08;
+  z-index: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  pointer-events: none;
+}
+
+.market-card:hover::before {
+  opacity: 0.25;
+  transform: translate(-50%, -50%) scale(1.1) rotate(360deg);
+}
+
+.market-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* ===== CARD INNER WRAPPER ===== */
+.card-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ===== CARD CONTENT - FIXED SIZES ===== */
+.market-card .art {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.market-card .art img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,0.6));
+  transition: transform 0.3s ease;
+}
+
+.market-card:hover .art img {
+  transform: scale(1.08);
+}
+
+.market-card .name {
+  font-weight: 900;
+  font-size: 1.15rem;
+  margin: 0 0 12px;
+  color: #fff;
+  text-shadow: 0 3px 10px rgba(0, 0, 0, 0.7);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.market-card .types {
+  margin-bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.type-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.market-card .abilities {
+  color: rgba(234, 234, 234, 0.85);
+  font-weight: 500;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin-bottom: auto;
+  padding-bottom: 16px;
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ===== PRICE + BUTTONS ===== */
+.bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.price-pill {
+  background: rgba(0, 0, 0, 0.6);
+  color: #00ff9d;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 255, 157, 0.2);
+  border: 1px solid rgba(0, 255, 157, 0.3);
+}
+
+/* ===== BUTTONS ===== */
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.actions button {
+  flex: 1;
+  padding: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: 'Orbitron', sans-serif;
+  white-space: nowrap;
+}
+
+.btn-secondary-action {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.btn-secondary-action:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.btn-primary-action {
+  background: linear-gradient(180deg, #00c474, #009d57);
+  color: #fff;
+}
+
+.btn-primary-action:hover {
+  filter: brightness(1.15);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 255, 157, 0.3);
+}
+
+/* ===== RARITY COLORS ===== */
+
+/* COMMON - WHITE/SILVER */
+.market-card.common {
+  background: linear-gradient(180deg, rgba(240, 240, 245, 0.12), rgba(180, 180, 190, 0.4));
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 12px 40px rgba(200, 200, 200, 0.15);
+}
+
+.market-card.common:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 30px 80px rgba(200, 200, 200, 0.3);
+}
+
+.market-card.uncommon {
+  background: linear-gradient(180deg, rgba(0,255,157,0.15), rgba(0,120,60,0.5));
+  border-color: rgba(0,255,157,0.4);
+  box-shadow: 0 12px 40px rgba(0,255,157,0.2);
+}
+
+.market-card.uncommon:hover {
+  box-shadow: 0 30px 80px rgba(0,255,157,0.35);
+}
+
+.market-card.rare {
+  background: linear-gradient(180deg, rgba(58,160,255,0.15), rgba(0,70,150,0.6));
+  border-color: rgba(58,160,255,0.5);
+  box-shadow: 0 12px 40px rgba(58,160,255,0.25);
+}
+
+.market-card.rare:hover {
+  box-shadow: 0 30px 80px rgba(58,160,255,0.4);
+}
+
+.market-card.epic {
+  background: linear-gradient(180deg, rgba(199,138,255,0.2), rgba(80,30,130,0.65));
+  border-color: rgba(199,138,255,0.5);
+  box-shadow: 0 12px 40px rgba(199,138,255,0.25);
+}
+
+.market-card.epic:hover {
+  box-shadow: 0 30px 80px rgba(199,138,255,0.4);
+}
+
+@keyframes glowLegendary {
+  0%, 100% { 
+    box-shadow: 0 12px 60px rgba(255,215,0,0.3);
+    border-color: rgba(255,215,0,0.6);
+  }
+  50% { 
+    box-shadow: 0 28px 100px rgba(255,215,0,0.55);
+    border-color: rgba(255,215,0,0.9);
+  }
+}
+
+.market-card.legendary {
+  background: linear-gradient(180deg, rgba(255,215,0,0.25), rgba(100,80,0,0.7));
+  border-color: rgba(255,215,0,0.7);
+  animation: glowLegendary 3s ease-in-out infinite;
+}
+
+.market-card.legendary:hover {
+  transform: translateY(-8px) scale(1.02);
+}
+
+/* ===== LOADER ===== */
+.loader {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+/* ===== NAVBAR ===== */
+.navbar-brand {
+  font-family: 'Orbitron', sans-serif;
+}
+
+.nav-link {
+  color: rgba(255, 255, 255, 0.7) !important;
+  transition: color 0.2s ease;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  color: #00ff9d !important;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .market-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  
+  .market-card {
+    height: 480px;
+  }
+  
+  .market-card .art {
+    height: 180px;
+  }
+}
+
+@media (max-width: 480px) {
+  .market-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
