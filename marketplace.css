@@ -341,4 +341,29 @@ body {
     grid-template-columns: 1fr;
     gap: 20px;
   }
+
+  /* Add to marketplace.css and collection.css (copy/paste at bottom) */
+
+/* NFT Token ID badge (subtle watermark at bottom-left) */
+.token-id-badge {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+  z-index: 3;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  letter-spacing: 0.4px;
+}
+
+/* Slight visual tweak for listed items container */
+.player-listings { margin-bottom: 20px; }
+.player-listings .market-card { height: auto; min-height: 260px; }
+
 }

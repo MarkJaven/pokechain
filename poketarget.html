@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Poké Target Trainer — Mini Aim Lab</title>
+  <link rel="stylesheet" href="poketarget.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="game-card" id="gameCard">
+      <header class="topbar">
+        <div class="title">
+          <div class="logo">
+            <img src= "images/pokeball.png" alt="Poké Target Trainer Logo" />
+          </div>
+          <div>
+            <div class="name">Poké Target Trainer</div>
+            <div class="sub">Aim practice — click the Pokémon fast!</div>
+          </div>
+        </div>
+
+        <div class="hud">
+          <div class="stat"><span class="num" id="timer">30</span><span class="lbl">Time (s)</span></div>
+          <div class="stat"><span class="num" id="hits">0</span><span class="lbl">Hits</span></div>
+          <div class="stat"><span class="num" id="accuracy">0%</span><span class="lbl">Accuracy</span></div>
+        </div>
+      </header>
+
+      <main class="play-area">
+        <div class="arena" id="arena"></div>
+
+        <!-- custom cursor element -->
+        <div class="cursor" id="cursor"><div class="ball"></div></div>
+
+        <!-- results overlay -->
+        <div class="overlay" id="resultsOverlay" style="display:none">
+          <div class="panel">
+            <h2>Round Complete</h2>
+            <div class="muted">Final Results</div>
+
+            <div class="big" id="finalHits">0 Hits</div>
+            <div id="finalAcc" style="font-weight:700;font-size:22px">0%</div>
+            <div class="muted" id="finalRank">Rank</div>
+
+            <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.04)">
+
+            <div style="text-align:left;margin-top:8px">
+              <div style="display:flex;justify-content:space-between"><span>Base points</span><strong id="basePoints">0</strong></div>
+              <div style="display:flex;justify-content:space-between"><span>Accuracy contribution</span><strong id="accContribution">0</strong></div>
+              <div style="display:flex;justify-content:space-between"><span>Rank bonus</span><strong id="rankMultiplierText">×1.00</strong></div>
+              <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:18px"><span>Total reward</span><strong id="finalReward">0</strong></div>
+            </div>
+
+            <button id="playAgainBtn">Play Again</button>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="poketarget.js"></script>
+</body>
+</html>

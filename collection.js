@@ -1,273 +1,212 @@
-/* collection.js - patched to normalize keys and auto-refresh on wallet + storage events */
-document.addEventListener('DOMContentLoaded', () => {
-  'use strict';
+console.log('collection.js unified grid loaded');
 
-  const starterGrid = document.getElementById('starterGrid');
-  const purchasedGrid = document.getElementById('purchasedGrid');
+async function safeGetProvider() {
+  if (!window.wallet || !window.wallet.getProvider) return null;
+  try { return await window.wallet.getProvider(); } catch { return null; }
+}
+
+function decodeBase64Json(dataUri) {
+  try {
+    const b64 = dataUri.split(',')[1];
+    return JSON.parse(atob(b64));
+  } catch { return null; }
+}
+
+function ipfsToHttp(uri) {
+  return uri?.startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + uri.slice(7) : uri;
+}
+
+async function fetchJson(uri) {
+  try {
+    if (uri.startsWith('data:application/json;base64,')) return decodeBase64Json(uri);
+    if (uri.startsWith('ipfs://')) uri = ipfsToHttp(uri);
+    const res = await fetch(uri);
+    return await res.json();
+  } catch { return null; }
+}
+
+async function resolveMetadata(nft, id) {
+  try {
+    const uri = await nft.tokenURI(id);
+    if (uri.startsWith('data:')) return decodeBase64Json(uri);
+    return await fetchJson(uri);
+  } catch { return null; }
+}
+
+function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities }) {
+  const card = document.createElement('div');
+  card.className = `market-card ${(rarity || 'common').toLowerCase()}`;
+  
+  const inner = document.createElement('div');
+  inner.className = 'card-inner';
+
+  // Unique ID Badge (absolute positioned on card, not inner)
+  const uniqueIdBadge = document.createElement('div');
+  uniqueIdBadge.className = 'unique-id-badge';
+  uniqueIdBadge.textContent = `#${uniqueId}`;
+
+  // Art section
+  const art = document.createElement('div');
+  art.className = 'art';
+  const img = document.createElement('img');
+  img.src = image || '';
+  img.alt = name || '';
+  art.appendChild(img);
+
+  // Pokemon name with PokeAPI ID
+  const h4 = document.createElement('h4');
+  h4.className = 'name';
+  h4.textContent = `#${pokemonId} ${name || ''}`;
+
+  // Types section
+  const typesDiv = document.createElement('div');
+  typesDiv.className = 'types';
+  if (types && types.length > 0) {
+    types.forEach(type => {
+      const badge = document.createElement('span');
+      badge.className = 'type-badge';
+      badge.textContent = type.toUpperCase();
+      typesDiv.appendChild(badge);
+    });
+  }
+
+  // Abilities section
+  const abilitiesDiv = document.createElement('div');
+  abilitiesDiv.className = 'abilities';
+  abilitiesDiv.textContent = abilities || '';
+
+  // Owned badge
+  const ownedBadge = document.createElement('div');
+  ownedBadge.className = 'owned-badge';
+  ownedBadge.textContent = 'Owned';
+
+  // Actions wrapper with sell button
+  const actionsDiv = document.createElement('div');
+  actionsDiv.className = 'actions';
+  const sellBtn = document.createElement('button');
+  sellBtn.className = 'btn-primary-action btn-sell';
+  sellBtn.textContent = 'Sell';
+  sellBtn.onclick = () => handleSell(uniqueId, name, pokemonId);
+  actionsDiv.appendChild(sellBtn);
+
+  // Build the card structure
+  inner.appendChild(art);
+  inner.appendChild(h4);
+  inner.appendChild(typesDiv);
+  inner.appendChild(abilitiesDiv);
+  inner.appendChild(ownedBadge);
+  inner.appendChild(actionsDiv);
+  
+  card.appendChild(uniqueIdBadge);
+  card.appendChild(inner);
+  
+  return card;
+}
+
+function handleSell(uniqueId, name, pokemonId) {
+  console.log(`Selling token ${uniqueId} - #${pokemonId} ${name}`);
+  alert(`Sell functionality for #${pokemonId} ${name} (Token #${uniqueId}) coming soon!`);
+}
+
+async function fetchOwnedTokens(provider, nft, addr) {
+  const iface = new ethers.Interface([
+    "event Transfer(address indexed from,address indexed to,uint256 indexed tokenId)"
+  ]);
+  const topic = ethers.id("Transfer(address,address,uint256)");
+  const latest = await provider.getBlockNumber();
+  let logs = [];
+  try {
+    logs = await provider.getLogs({
+      address: nft.target,
+      fromBlock: Math.max(0, latest - 50000),
+      toBlock: 'latest',
+      topics: [topic]
+    });
+  } catch (e) { console.warn('getLogs failed', e); }
+
+  const owned = new Set();
+  for (const l of logs) {
+    try {
+      const { args } = iface.parseLog(l);
+      const from = args.from.toLowerCase(), to = args.to.toLowerCase();
+      const tid = args.tokenId.toString();
+      if (to === addr) owned.add(tid);
+      if (from === addr) owned.delete(tid);
+    } catch {}
+  }
+  return [...owned].map(Number);
+}
+
+async function renderCollection() {
+  const grid = document.getElementById('allCollectionGrid');
+  const totalEl = document.getElementById('totalPokemon');
+  const rareEl = document.getElementById('rarePokemon');
   const emptyState = document.getElementById('emptyState');
-  const starterToggle = document.getElementById('starterToggle');
-  const purchasedToggle = document.getElementById('purchasedToggle');
 
-  const STARTER_IDS = [1, 4, 7];
+  grid.innerHTML = '';
+  const provider = await safeGetProvider();
+  if (!provider) return console.error('no provider');
 
-  function computeMockPrice(p) {
-    const be = p.base_experience || 10;
-    const abilities = (p.abilities || []).length;
-    return Math.max(1, Math.round((be * 0.03 + abilities * 0.5) * 10) / 10);
+  let acc = window.wallet?.getAccount?.();
+  if (!acc) {
+    await window.wallet?.connectWallet?.();
+    acc = window.wallet?.getAccount?.();
   }
+  if (!acc) return alert('Please connect your wallet first.');
 
-  function computeRarity(baseExp) {
-    if (baseExp >= 200) return 'Legendary';
-    if (baseExp >= 150) return 'Epic';
-    if (baseExp >= 100) return 'Rare';
-    if (baseExp >= 60) return 'Uncommon';
-    return 'Common';
-  }
+  const addr = acc.toLowerCase();
+  const nftAddr = window.CONTRACTS?.POKEMON_NFT_ADDRESS;
+  const abi = window.ABIS?.POKEMON_NFT;
+  const nft = new ethers.Contract(nftAddr, abi, provider);
 
-  function rarityClassLabel(r) {
-    return r ? r.toLowerCase() : 'common';
-  }
+  const ids = await fetchOwnedTokens(provider, nft, addr);
+  let total = 0, rareCount = 0;
 
-  async function loadStarters() {
-    try {
-      const promises = STARTER_IDS.map(id =>
-        fetch(`https://pokeapi.co/api/v2/pokemon/${id}`).then(r => r.json())
+  for (const uniqueId of ids) {
+    const meta = await resolveMetadata(nft, uniqueId);
+    if (!meta) continue;
+    
+    let name = meta.name || `Token ${uniqueId}`;
+    const nameMatch = name.match(/Pokemon #\d+:\s*(.+)/i);
+    if (nameMatch) {
+      name = nameMatch[1];
+    }
+    
+    let image = meta.image ? ipfsToHttp(meta.image) : '';
+    let rarity = 'Common';
+    let types = [];
+    let abilities = '';
+    let pokemonId = 1;
+    
+    if (meta.attributes) {
+      const r = meta.attributes.find(a => a.trait_type?.toLowerCase() === 'rarity');
+      if (r) rarity = r.value;
+      
+      const t = meta.attributes.find(a => a.trait_type?.toLowerCase() === 'type');
+      if (t && t.value) {
+        types = t.value.split(',').map(s => s.trim());
+      }
+      
+      const a = meta.attributes.find(a => a.trait_type?.toLowerCase() === 'abilities');
+      if (a && a.value) abilities = `Abilities: ${a.value}`;
+      
+      const pid = meta.attributes.find(a => 
+        a.trait_type?.toLowerCase() === 'pokemon id' || 
+        a.trait_type?.toLowerCase() === 'pokemonid' ||
+        a.trait_type?.toLowerCase() === 'id'
       );
-      const starters = await Promise.all(promises);
-
-      starterGrid.innerHTML = '';
-      starters.forEach(p => {
-        const enriched = {
-          ...p,
-          price: computeMockPrice(p),
-          rarity: computeRarity(p.base_experience || 0)
-        };
-        starterGrid.appendChild(makeCollectionCard(enriched, true));
-      });
-
-      document.getElementById('starterCount').textContent = starters.length;
-    } catch (e) {
-      console.error('Failed to load starters', e);
+      if (pid) pokemonId = pid.value;
     }
+    
+    const card = makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities });
+    grid.appendChild(card);
+    total++;
+    if (['rare','epic','legendary'].includes(rarity.toLowerCase())) rareCount++;
   }
 
-  function loadPurchases() {
-    const rawAcc = window.wallet?.getAccount();
-    if (!rawAcc) {
-      purchasedGrid.innerHTML = '<div class="empty-purchased"><p>Connect wallet to view your purchases</p></div>';
-      document.getElementById('purchasedCount').textContent = '0';
-      return [];
-    }
+  totalEl.textContent = total;
+  rareEl.textContent = rareCount;
+  emptyState.style.display = total ? 'none' : 'block';
+}
 
-    const acc = rawAcc.toLowerCase(); // normalize
-
-    try {
-      const key = `purchases_${acc}`;
-      const purchases = JSON.parse(localStorage.getItem(key) || '[]');
-
-      purchasedGrid.innerHTML = '';
-      if (purchases.length === 0) {
-        purchasedGrid.innerHTML = '<div class="empty-purchased"><p>No purchased Pokémon yet. Visit the marketplace!</p></div>';
-      } else {
-        purchases.forEach(p => {
-          purchasedGrid.appendChild(makeCollectionCard(p, false));
-        });
-      }
-
-      document.getElementById('purchasedCount').textContent = purchases.length;
-      return purchases;
-    } catch (e) {
-      console.error('Failed to load purchases', e);
-      return [];
-    }
-  }
-
-  function makeCollectionCard(p, isStarter) {
-    const card = document.createElement('div');
-    const rarityClass = rarityClassLabel(p.rarity);
-    card.className = `collection-card market-card ${rarityClass}`;
-
-    const inner = document.createElement('div');
-    inner.className = 'card-inner';
-
-    if (isStarter) {
-      const badge = document.createElement('div');
-      badge.className = 'card-badge';
-      badge.textContent = '★ STARTER';
-      card.appendChild(badge);
-    }
-
-    const art = document.createElement('div');
-    art.className = 'art';
-    const img = document.createElement('img');
-    img.src = p.sprites?.other?.['official-artwork']?.front_default || p.sprites?.front_default || '';
-    img.alt = p.name || '';
-    art.appendChild(img);
-
-    const nameEl = document.createElement('h4');
-    nameEl.className = 'name';
-    nameEl.textContent = `#${p.id} ${p.name}`;
-
-    const typesWrap = document.createElement('div');
-    typesWrap.className = 'types';
-    (p.types || []).forEach(t => {
-      const tb = document.createElement('span');
-      tb.className = 'type-badge';
-      tb.textContent = t.type.name;
-      typesWrap.appendChild(tb);
-    });
-
-    const abil = document.createElement('div');
-    abil.className = 'abilities';
-    abil.textContent = 'Abilities: ' + (p.abilities?.map(a => a.ability?.name || a.name).slice(0, 2).join(', ') || '—');
-
-    const bottom = document.createElement('div');
-    bottom.className = 'bottom-row';
-    const price = document.createElement('div');
-    price.className = 'price-pill';
-    price.textContent = `${p.price} PKCN`;
-    bottom.appendChild(price);
-
-    const actions = document.createElement('div');
-    actions.className = 'actions';
-
-    const viewBtn = document.createElement('button');
-    viewBtn.className = 'btn-secondary-action';
-    viewBtn.textContent = 'View';
-    viewBtn.onclick = () => alert(`${p.name}\nBase XP: ${p.base_experience}\nRarity: ${p.rarity}`);
-    actions.appendChild(viewBtn);
-
-    const battleBtn = document.createElement('button');
-    battleBtn.className = 'btn-primary-action';
-    battleBtn.textContent = 'Battle';
-    battleBtn.onclick = () => alert(`${p.name} is ready for battle!`);
-    actions.appendChild(battleBtn);
-
-    inner.appendChild(art);
-    inner.appendChild(nameEl);
-    inner.appendChild(typesWrap);
-    inner.appendChild(abil);
-    inner.appendChild(bottom);
-    inner.appendChild(actions);
-
-    card.appendChild(inner);
-    return card;
-  }
-
-  function updateStats(purchases) {
-    const total = STARTER_IDS.length + purchases.length;
-    const rareAndAbove = purchases.filter(p =>
-      ['Rare', 'Epic', 'Legendary'].includes(p.rarity)
-    ).length;
-    const totalValue = purchases.reduce((sum, p) => sum + (p.price || 0), 0);
-    const battleReady = total;
-
-    document.getElementById('totalPokemon').textContent = total;
-    document.getElementById('rarePokemon').textContent = rareAndAbove;
-    document.getElementById('totalValue').textContent = totalValue.toFixed(1);
-    document.getElementById('battleReady').textContent = battleReady;
-
-    if (total === 0) {
-      emptyState.style.display = 'block';
-    } else {
-      emptyState.style.display = 'none';
-    }
-  }
-
-  starterToggle?.addEventListener('click', () => {
-    starterToggle.classList.toggle('active');
-    starterGrid.classList.toggle('active');
-  });
-
-  purchasedToggle?.addEventListener('click', () => {
-    purchasedToggle.classList.toggle('active');
-    purchasedGrid.classList.toggle('active');
-  });
-
-  // Refresh purchases when wallet becomes ready or account changes
-  document.addEventListener('wallet.ready', () => {
-    try {
-      const purchases = loadPurchases();
-      updateStats(purchases);
-      console.log('wallet.ready -> purchases refreshed');
-    } catch (e) { console.warn('wallet.ready handler error', e); }
-  });
-
-  // Handle MetaMask account changes (same-session)
-  if (window.ethereum && window.ethereum.on) {
-    window.ethereum.on('accountsChanged', (accounts) => {
-      try {
-        const purchases = loadPurchases();
-        updateStats(purchases);
-        console.log('accountsChanged -> purchases refreshed', accounts);
-      } catch (e) { console.warn('accountsChanged handler error', e); }
-    });
-  }
-
-  // Listen for purchases.updated (dispatched by marketplace when purchase occurs)
-  window.addEventListener('purchases.updated', (ev) => {
-    try {
-      const acc = window.wallet?.getAccount();
-      if (!acc) return;
-      const normalized = acc.toLowerCase();
-      if (!ev.detail || !ev.detail.account || ev.detail.account === normalized) {
-        const purchases = loadPurchases();
-        updateStats(purchases);
-        console.log('purchases.updated -> refreshed purchases');
-      }
-    } catch(e) { console.warn(e); }
-  });
-
-  // Listen for cross-tab storage changes
-  window.addEventListener('storage', (ev) => {
-    if (!ev.key) return;
-    if (!ev.key.startsWith('purchases_')) return;
-    try {
-      const acc = window.wallet?.getAccount();
-      if (!acc) return;
-      if (ev.key === `purchases_${acc.toLowerCase()}`) {
-        const purchases = loadPurchases();
-        updateStats(purchases);
-        console.log('storage event -> refreshed purchases for current account');
-      }
-    } catch(e) { console.warn(e); }
-  });
-
-  (async function init() {
-    await loadStarters();
-
-    // try to load purchases immediately (if wallet already connected)
-    let purchases = loadPurchases();
-    updateStats(purchases);
-
-    // If wallet helper exists but there's no account yet, wait briefly for wallet to auto-connect
-    try {
-      if (window.wallet && !window.wallet.getAccount()) {
-        await new Promise((resolve) => {
-          let resolved = false;
-          const finish = () => { if (!resolved) { resolved = true; cleanup(); resolve(); } };
-          const cleanup = () => {
-            document.removeEventListener('wallet.ready', finish);
-            if (window.ethereum && window.ethereum.removeListener) {
-              try { window.ethereum.removeListener('accountsChanged', finish); } catch(e){}
-            }
-            clearTimeout(timeoutId);
-          };
-
-          document.addEventListener('wallet.ready', finish);
-          if (window.ethereum && window.ethereum.on) {
-            window.ethereum.on('accountsChanged', finish);
-          }
-          const timeoutId = setTimeout(finish, 1200); // fallback after 1.2s
-        });
-
-        purchases = loadPurchases();
-        updateStats(purchases);
-        console.log('init: purchases refreshed after wallet ready / account change');
-      }
-    } catch (e) {
-      console.warn('init: wallet waiting failed', e);
-    }
-  })();
-
-});
+window.addEventListener('load', renderCollection);
