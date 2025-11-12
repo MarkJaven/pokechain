@@ -6,36 +6,74 @@ window.CONTRACTS = {
   POKEMON_NFT_ADDRESS: "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B"
 };
 
-// Minimal ABIs used by marketplace.js (ethers v6 friendly signatures)
+// Add these functions to your POKEMON_NFT ABI in config.js
+
+const POKEMON_NFT_ABI = [
+  // ... your existing functions ...
+  
+  // ERC721 Approval functions (REQUIRED)
+  "function approve(address to, uint256 tokenId) external",
+  "function setApprovalForAll(address operator, bool approved) external",
+  "function isApprovedForAll(address owner, address operator) external view returns (bool)",
+  "function getApproved(uint256 tokenId) external view returns (address)",
+  
+  // Other required functions
+  "function ownerOf(uint256 tokenId) external view returns (address)",
+  "function tokenURI(uint256 tokenId) external view returns (string)",
+  "function balanceOf(address owner) external view returns (uint256)",
+  "function transferFrom(address from, address to, uint256 tokenId) external",
+  "function safeTransferFrom(address from, address to, uint256 tokenId) external",
+  
+  // Events
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+  "event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)",
+  "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)"
+];
+
+// Example of a complete POKEMON_NFT ABI:
 window.ABIS = {
+  POKEMON_NFT: [
+    "function mint(address to, string memory name, string memory rarity, string memory imageURI) public returns (uint256)",
+    "function tokenURI(uint256 tokenId) public view returns (string memory)",
+    "function ownerOf(uint256 tokenId) public view returns (address)",
+    "function balanceOf(address owner) public view returns (uint256)",
+    "function remainingSupply(string memory rarity) public view returns (uint256)",
+    
+    // CRITICAL: These approval functions MUST be included
+    "function approve(address to, uint256 tokenId) public",
+    "function setApprovalForAll(address operator, bool approved) public",
+    "function isApprovedForAll(address owner, address operator) public view returns (bool)",
+    "function getApproved(uint256 tokenId) public view returns (address)",
+    
+    "function transferFrom(address from, address to, uint256 tokenId) public",
+    "function safeTransferFrom(address from, address to, uint256 tokenId) public",
+    
+    "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+    "event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)",
+    "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)",
+    "event PokemonMinted(uint256 indexed tokenId, address indexed owner, string name, string rarity)"
+  ],
+  
+  MARKETPLACE: [
+    "function buyPokemon(string memory name, string memory rarity, string memory imageURI, uint256 price) public returns (uint256)",
+    "function listPokemon(uint256 tokenId, uint256 price) public",
+    "function buyListedPokemon(uint256 listingId) public",
+    "function delistPokemon(uint256 listingId) public",
+    
+    "event PokemonPurchased(address indexed buyer, uint256 indexed tokenId, uint256 price)",
+    "event PokemonListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
+    "event PokemonBought(uint256 indexed listingId, address indexed buyer)",
+    "event PokemonDelisted(uint256 indexed listingId)"
+  ],
+  
   ERC20_MIN: [
+    "function balanceOf(address account) view returns (uint256)",
     "function decimals() view returns (uint8)",
     "function symbol() view returns (string)",
-    "function balanceOf(address) view returns (uint256)",
+    "function name() view returns (string)",
     "function allowance(address owner, address spender) view returns (uint256)",
     "function approve(address spender, uint256 amount) returns (bool)",
     "function transfer(address to, uint256 amount) returns (bool)",
     "function transferFrom(address from, address to, uint256 amount) returns (bool)"
-  ],
-
-  MARKETPLACE: [
-    "function buyPokemon(string name, string rarity, string imageURI, uint256 price) external",
-    "function remainingSupply(string rarity) view returns (uint256)",
-    "function listPokemon(uint256 tokenId, uint256 price) returns (uint256)",
-    "function buyListedPokemon(uint256 listingId) external",
-    "event PokemonPurchased(address indexed buyer, uint256 indexed tokenId, uint256 price)",
-    "event PokemonListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
-    "event ListingBought(uint256 indexed listingId, uint256 indexed tokenId, address indexed buyer, uint256 price)"
-  ],
-
-  POKEMON_NFT: [
-    "function remainingSupply(string rarity) view returns (uint256)",
-    "function tokenURI(uint256 tokenId) view returns (string)",
-    "event PokemonMinted(uint256 indexed tokenId, address indexed to, string name, string rarity, string imageURI)",
-    "function ownerOf(uint256 tokenId) view returns (address)",
-    "function getApproved(uint256 tokenId) view returns (address)",
-    "function isApprovedForAll(address owner, address operator) view returns (bool)",
-    "function safeTransferFrom(address from, address to, uint256 tokenId) external",
-    "function transferFrom(address from, address to, uint256 tokenId) external"
   ]
 };

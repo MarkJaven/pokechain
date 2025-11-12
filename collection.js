@@ -33,6 +33,19 @@ async function resolveMetadata(nft, id) {
   } catch { return null; }
 }
 
+// Fetch Pokemon data from PokeAPI by name
+async function fetchPokeAPIData(pokemonName) {
+  try {
+    const cleanName = pokemonName.toLowerCase().trim();
+    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${cleanName}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    console.warn(`Failed to fetch PokeAPI data for ${pokemonName}:`, e);
+    return null;
+  }
+}
+
 function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities }) {
   const card = document.createElement('div');
   card.className = `market-card ${(rarity || 'common').toLowerCase()}`;
@@ -85,8 +98,8 @@ function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities }
   actionsDiv.className = 'actions';
   const sellBtn = document.createElement('button');
   sellBtn.className = 'btn-primary-action btn-sell';
-  sellBtn.textContent = 'Sell';
-  sellBtn.onclick = () => handleSell(uniqueId, name, pokemonId);
+  sellBtn.textContent = 'List for Sale';
+  sellBtn.onclick = () => handleSell(uniqueId, name, pokemonId, image, rarity);
   actionsDiv.appendChild(sellBtn);
 
   // Build the card structure
@@ -103,9 +116,158 @@ function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities }
   return card;
 }
 
-function handleSell(uniqueId, name, pokemonId) {
-  console.log(`Selling token ${uniqueId} - #${pokemonId} ${name}`);
-  alert(`Sell functionality for #${pokemonId} ${name} (Token #${uniqueId}) coming soon!`);
+async function handleSell(uniqueId, name, pokemonId, image, rarity) {
+  try {
+    if (!window.txModal) {
+      alert('Transaction modal not loaded. Please refresh the page.');
+      return;
+    }
+
+    // Prompt for price
+    const priceInput = await window.txModal.prompt({
+      type: 'confirm',
+      title: 'List Pokemon for Sale',
+      message: `Set the price for #${pokemonId} ${name}`,
+      label: 'Price (PKCN)',
+      placeholder: 'Enter price in PKCN tokens',
+      inputType: 'number',
+      confirmText: 'List for Sale',
+      validate: (value) => {
+        const num = parseFloat(value);
+        if (!num || num <= 0) {
+          alert('Please enter a valid price greater than 0');
+          return false;
+        }
+        return true;
+      }
+    });
+
+    if (!priceInput) return; // User cancelled
+
+    const price = parseFloat(priceInput);
+
+    // Confirm listing
+    const confirmed = await window.txModal.confirm({
+      title: 'Confirm Listing',
+      message: `Are you sure you want to list this Pokemon for sale?`,
+      details: [
+        { label: 'Pokemon', value: `#${pokemonId} ${name}` },
+        { label: 'Rarity', value: rarity },
+        { label: 'Token ID', value: `#${uniqueId}` },
+        { label: 'Price', value: `${price} PKCN`, highlight: true }
+      ],
+      confirmText: 'Confirm Listing',
+      cancelText: 'Cancel'
+    });
+
+    if (!confirmed) return;
+
+    // Check wallet connection
+    if (!window.wallet || !window.wallet.getAccount()) {
+      if (!await window.txModal.confirm({
+        title: 'Connect Wallet',
+        message: 'You need to connect your wallet to list items for sale.',
+        confirmText: 'Connect Wallet'
+      })) return;
+      
+      await window.wallet.connectWallet();
+    }
+
+    // Start transaction
+    window.txModal.transaction({
+      title: 'Listing Pokemon',
+      message: 'Approving marketplace access and creating listing...',
+      subtitle: 'Please confirm both transactions in your wallet.'
+    });
+
+    const signer = await window.wallet.getSigner();
+    const provider = await window.wallet.getProvider();
+    
+    // Get contract instances
+    const nftAddr = window.CONTRACTS.POKEMON_NFT_ADDRESS;
+    const marketplaceAddr = window.CONTRACTS.MARKETPLACE_ADDRESS;
+    const pkcnAddr = window.CONTRACTS.PKCN_ADDRESS;
+    
+    const nft = new ethers.Contract(nftAddr, window.ABIS.POKEMON_NFT, signer);
+    const marketplace = new ethers.Contract(marketplaceAddr, window.ABIS.MARKETPLACE, signer);
+    
+    // Get token decimals
+    const tokenProv = new ethers.Contract(pkcnAddr, window.ABIS.ERC20_MIN, provider);
+    const decimalsBN = await tokenProv.decimals().catch(() => 18);
+    const decimals = Number(decimalsBN.toString ? decimalsBN.toString() : decimalsBN);
+    
+    // Convert price to token units
+    let priceUnits;
+    if (decimals === 0) {
+      priceUnits = BigInt(Math.floor(price));
+    } else {
+      priceUnits = ethers.parseUnits(String(price), decimals);
+    }
+
+    // Step 1: Check and set approval for marketplace
+    try {
+      const isApproved = await nft.isApprovedForAll(window.wallet.getAccount(), marketplaceAddr);
+      
+      if (!isApproved) {
+        window.txModal.transaction({
+          title: 'Approve Marketplace',
+          message: 'Granting marketplace permission to manage your Pokemon...',
+          subtitle: 'Confirm the approval transaction in your wallet.'
+        });
+        
+        const approveTx = await nft.setApprovalForAll(marketplaceAddr, true);
+        await approveTx.wait();
+      }
+    } catch (approvalError) {
+      console.warn('Approval check/set failed, trying individual approval:', approvalError);
+      
+      // Fallback: Try individual token approval
+      window.txModal.transaction({
+        title: 'Approve Marketplace',
+        message: 'Granting marketplace permission for this Pokemon...',
+        subtitle: 'Confirm the approval transaction in your wallet.'
+      });
+      
+      try {
+        const approveTx = await nft.approve(marketplaceAddr, BigInt(uniqueId));
+        await approveTx.wait();
+      } catch (individualApprovalError) {
+        throw new Error('Failed to approve marketplace. Make sure your NFT contract supports ERC721 approval functions.');
+      }
+    }
+
+    // Step 2: List the Pokemon
+    window.txModal.transaction({
+      title: 'Creating Listing',
+      message: 'Listing your Pokemon on the marketplace...',
+      subtitle: 'Confirm the listing transaction in your wallet.'
+    });
+
+    const listTx = await marketplace.listPokemon(BigInt(uniqueId), priceUnits);
+    await listTx.wait();
+
+    // Success!
+    window.txModal.success(
+      'Listed Successfully!',
+      `Your ${name} is now listed on the marketplace for ${price} PKCN. Other players can now purchase it!`,
+      () => {
+        // Refresh the collection
+        renderCollection();
+      }
+    );
+
+  } catch (err) {
+    console.error('Sell failed:', err);
+    
+    let errorMessage = 'Failed to list Pokemon for sale.';
+    if (err?.reason) errorMessage = err.reason;
+    else if (err?.message) errorMessage = err.message;
+    if (err?.code === 4001 || err?.code === 'ACTION_REJECTED') {
+      errorMessage = 'Transaction was rejected by user.';
+    }
+    
+    window.txModal.error('Listing Failed', errorMessage);
+  }
 }
 
 async function fetchOwnedTokens(provider, nft, addr) {
@@ -152,7 +314,10 @@ async function renderCollection() {
     await window.wallet?.connectWallet?.();
     acc = window.wallet?.getAccount?.();
   }
-  if (!acc) return alert('Please connect your wallet first.');
+  if (!acc) {
+    window.txModal?.error('Wallet Required', 'Please connect your wallet to view your collection.');
+    return;
+  }
 
   const addr = acc.toLowerCase();
   const nftAddr = window.CONTRACTS?.POKEMON_NFT_ADDRESS;
@@ -163,40 +328,67 @@ async function renderCollection() {
   let total = 0, rareCount = 0;
 
   for (const uniqueId of ids) {
+    // Get NFT metadata from contract
     const meta = await resolveMetadata(nft, uniqueId);
     if (!meta) continue;
     
-    let name = meta.name || `Token ${uniqueId}`;
-    const nameMatch = name.match(/Pokemon #\d+:\s*(.+)/i);
-    if (nameMatch) {
-      name = nameMatch[1];
-    }
+    console.log('NFT metadata for #' + uniqueId + ':', meta);
     
+    // Extract basic info from NFT metadata
+    let name = meta.name || `Token ${uniqueId}`;
     let image = meta.image ? ipfsToHttp(meta.image) : '';
     let rarity = 'Common';
+    
+    // Get rarity from attributes
+    if (meta.attributes && Array.isArray(meta.attributes)) {
+      const rarityAttr = meta.attributes.find(a => 
+        a.trait_type?.toLowerCase() === 'rarity'
+      );
+      if (rarityAttr && rarityAttr.value) {
+        rarity = rarityAttr.value;
+      }
+    }
+    
+    // Now fetch additional data from PokeAPI using the pokemon name
+    let pokemonId = uniqueId; // fallback
     let types = [];
     let abilities = '';
-    let pokemonId = 1;
     
-    if (meta.attributes) {
-      const r = meta.attributes.find(a => a.trait_type?.toLowerCase() === 'rarity');
-      if (r) rarity = r.value;
+    const pokeData = await fetchPokeAPIData(name);
+    if (pokeData) {
+      console.log('PokeAPI data for ' + name + ':', pokeData);
       
-      const t = meta.attributes.find(a => a.trait_type?.toLowerCase() === 'type');
-      if (t && t.value) {
-        types = t.value.split(',').map(s => s.trim());
+      // Get Pokemon ID from PokeAPI
+      pokemonId = pokeData.id;
+      
+      // Get types from PokeAPI
+      if (pokeData.types && Array.isArray(pokeData.types)) {
+        types = pokeData.types.map(t => t.type.name);
       }
       
-      const a = meta.attributes.find(a => a.trait_type?.toLowerCase() === 'abilities');
-      if (a && a.value) abilities = `Abilities: ${a.value}`;
+      // Get abilities from PokeAPI
+      if (pokeData.abilities && Array.isArray(pokeData.abilities)) {
+        const abilityNames = pokeData.abilities
+          .slice(0, 3)
+          .map(a => a.ability?.name || '')
+          .filter(Boolean);
+        if (abilityNames.length > 0) {
+          abilities = `Abilities: ${abilityNames.join(', ')}`;
+        }
+      }
       
-      const pid = meta.attributes.find(a => 
-        a.trait_type?.toLowerCase() === 'pokemon id' || 
-        a.trait_type?.toLowerCase() === 'pokemonid' ||
-        a.trait_type?.toLowerCase() === 'id'
-      );
-      if (pid) pokemonId = pid.value;
+      // Capitalize name properly
+      name = name.charAt(0).toUpperCase() + name.slice(1);
     }
+    
+    console.log('✅ Final card data:', { 
+      uniqueId, 
+      pokemonId, 
+      name, 
+      rarity, 
+      types, 
+      abilities 
+    });
     
     const card = makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities });
     grid.appendChild(card);

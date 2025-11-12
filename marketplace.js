@@ -1,9 +1,4 @@
-/* marketplace.js - updated
-   - Adds player-listings rendering (reads marketplace logs)
-   - Displays NFT tokenId where available
-   - Upgrades price ranges by rarity (deterministic)
-   - Keeps existing UI & fetch/paging behavior
-*/
+/* marketplace.js - updated with modal system and player listings */
 
 document.addEventListener('DOMContentLoaded', () => {
   'use strict';
@@ -31,10 +26,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function rarityClassLabel(r) { return r ? r.toLowerCase() : 'common'; }
 
-  // Deterministic price per rarity (PKCN units)
   function computeMockPrice(p) {
     const rarity = computeRarity(p.base_experience || 0);
-    const idFactor = (p.id % 50); // a small deterministic variance
+    const idFactor = (p.id % 50);
     switch (rarity) {
       case 'Common': return Math.max(100, 100 + Math.round((p.base_experience || 10) * 1.2) + idFactor);
       case 'Uncommon': return Math.max(300, 300 + Math.round((p.base_experience || 30) * 1.5) + idFactor);
@@ -45,7 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ---- Load types and PokeAPI pages (unchanged behavior) ----
   async function loadTypes() {
     if (!typeFilter) return;
     try {
@@ -81,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
       renderGrid();
     } catch (e) {
       console.error('loadPage error', e);
-      alert('Failed to load Pokémon. Please try again.');
+      window.txModal?.error('Load Failed', 'Failed to load Pokémon. Please try again.');
     } finally {
       if (loader) loader.style.display = 'none';
     }
@@ -159,7 +152,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const price = document.createElement('div');
     price.className = 'price-pill';
     price.textContent = `${p.price} PKCN`;
-    // supply placeholder (will be updated)
     const supplySpan = document.createElement('div');
     supplySpan.className = 'supply-pill';
     supplySpan.textContent = '… left';
@@ -185,18 +177,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     card.appendChild(inner);
 
-    // fetch remaining supply (non-blocking)
     fetchRemainingSupplyForRarity(p.rarity).then(n => {
       supplySpan.textContent = (typeof n === 'number') ? `${n} left` : '—';
     }).catch(e => {
       supplySpan.textContent = '—';
-      console.debug('supply fetch', e);
     });
 
     return card;
   }
 
-  // ----------------- On-chain integration (mint buys) -----------------
   function assertConfig() {
     if (!window.CONTRACTS || !window.ABIS) throw new Error('Missing config.js (CONTRACTS/ABIS)');
     if (!window.wallet) throw new Error('Missing wallet.js helper');
@@ -216,14 +205,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Ensure marketplace approved to spend 'humanAmount' (number or string) OR an already-scaled BigInt.
   async function ensureTokenApproval(tokenAddress, spender, humanAmountOrRaw) {
     const signer = await window.wallet.getSigner();
     const token = new ethers.Contract(tokenAddress, window.ABIS.ERC20_MIN, signer);
 
-    // If caller provided a raw BigInt-like, treat as already scaled units:
     if (typeof humanAmountOrRaw === 'bigint' || (typeof humanAmountOrRaw === 'string' && /^[0-9]+$/.test(humanAmountOrRaw))) {
-      // treat as raw token units
       const rawAmount = BigInt(humanAmountOrRaw.toString());
       const owner = await window.wallet.getAccount();
       const allowance = BigInt((await token.allowance(owner, spender)).toString());
@@ -233,13 +219,12 @@ document.addEventListener('DOMContentLoaded', () => {
       return true;
     }
 
-    // Otherwise treat as human amount (e.g., '1500' or 1500)
     const human = humanAmountOrRaw;
     const provider = await window.wallet.getProvider();
     const tokenProv = new ethers.Contract(tokenAddress, window.ABIS.ERC20_MIN, provider);
     const decimalsBN = await tokenProv.decimals().catch(() => 18);
     const decimals = Number(decimalsBN.toString ? decimalsBN.toString() : decimalsBN);
-    const raw = ethers.parseUnits(String(human), decimals); // BigInt
+    const raw = ethers.parseUnits(String(human), decimals);
     const owner = await window.wallet.getAccount();
     const allowance = BigInt((await token.allowance(owner, spender)).toString());
     if (allowance >= BigInt(raw.toString())) return true;
@@ -248,43 +233,60 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
-  // Buy and mint via Marketplace (existing contract)
   async function buyPokemonOnChain(pokemon) {
     try {
       assertConfig();
+      
       if (!window.wallet.getAccount()) {
-        if (!confirm('You must connect your wallet to buy. Connect now?')) return;
+        const shouldConnect = await window.txModal.confirm({
+          title: 'Connect Wallet',
+          message: 'You must connect your wallet to buy Pokemon.',
+          confirmText: 'Connect Wallet'
+        });
+        if (!shouldConnect) return;
         await window.wallet.connectWallet();
       }
 
-      // === Compute price in raw token units using on-chain decimals ===
       const pkcnAddr = window.CONTRACTS.PKCN_ADDRESS;
       const marketplaceAddr = window.CONTRACTS.MARKETPLACE_ADDRESS;
-      const signer = await window.wallet.getSigner();
-
-      // Query decimals directly from contract to avoid stale metadata
-      const tokenProv = new ethers.Contract(pkcnAddr, window.ABIS.ERC20_MIN, await window.wallet.getProvider());
+      
+      const provider = await window.wallet.getProvider();
+      const tokenProv = new ethers.Contract(pkcnAddr, window.ABIS.ERC20_MIN, provider);
       const decimalsBN = await tokenProv.decimals().catch(() => 18);
       const decimals = Number(decimalsBN.toString ? decimalsBN.toString() : decimalsBN);
 
-      // Human price displayed in UI (e.g. 1500). Use decimals to scale correctly.
       let priceUnits;
       if (decimals === 0) {
-        // If token has 0 decimals, price is an integer count of tokens
         priceUnits = BigInt(Math.floor(Number(pokemon.price)));
       } else {
-        // parseUnits returns BigInt-like (ethers v6)
         priceUnits = ethers.parseUnits(String(pokemon.price), decimals);
       }
 
-      // Friendly confirm message using human-readable formatting
       const humanPrice = (decimals === 0) ? String(priceUnits) : ethers.formatUnits(priceUnits, decimals);
-      if (!confirm(`Buy ${pokemon.name} (#${pokemon.id}) for ${humanPrice} PKCN?`)) return;
+      
+      const confirmed = await window.txModal.confirm({
+        title: 'Buy Pokemon',
+        message: `Confirm purchase of this Pokemon?`,
+        details: [
+          { label: 'Pokemon', value: `#${pokemon.id} ${pokemon.name}` },
+          { label: 'Rarity', value: pokemon.rarity },
+          { label: 'Price', value: `${humanPrice} PKCN`, highlight: true }
+        ],
+        confirmText: 'Buy Now',
+        cancelText: 'Cancel'
+      });
+      
+      if (!confirmed) return;
 
-      // Ensure approval (use the new ensureTokenApproval helper)
+      window.txModal.transaction({
+        title: 'Purchasing Pokemon',
+        message: 'Approving payment and minting your Pokemon...',
+        subtitle: 'Please confirm the transactions in your wallet.'
+      });
+
       await ensureTokenApproval(pkcnAddr, marketplaceAddr, priceUnits);
 
-      // Now call marketplace.buyPokemon with priceUnits (raw)
+      const signer = await window.wallet.getSigner();
       const marketplace = new ethers.Contract(marketplaceAddr, window.ABIS.MARKETPLACE, signer);
       const tx = await marketplace.buyPokemon(
         pokemon.name,
@@ -292,11 +294,9 @@ document.addEventListener('DOMContentLoaded', () => {
         pokemon.sprites?.other?.['official-artwork']?.front_default || pokemon.sprites?.front_default || '',
         priceUnits
       );
-      alert('Transaction sent. Confirm in your wallet...');
+      
       const receipt = await tx.wait();
 
-
-      // parse logs for minted tokenId (NFT contract event or marketplace event)
       let mintedTokenId = null;
       try {
         const nftIface = new ethers.Interface(window.ABIS.POKEMON_NFT);
@@ -307,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
               mintedTokenId = parsed.args[0].toString();
               break;
             }
-          } catch (e) { /* not this iface/log */ }
+          } catch (e) { }
         }
       } catch (e) {
         console.warn('Failed to parse NFT logs for tokenId', e);
@@ -320,7 +320,6 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
               const parsed = mpIface.parseLog(log);
               if (parsed && (parsed.name === 'PokePurchased' || parsed.name === 'PokemonPurchased')) {
-                // (buyer, tokenId, price)
                 mintedTokenId = parsed.args[1].toString();
                 break;
               }
@@ -329,42 +328,25 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) { console.warn('parse marketplace logs failed', e); }
       }
 
-      // Persist lightweight record with tokenId so Collection shows NFT id
-      try {
-        const normalizedAcc = window.wallet.getAccount().toLowerCase();
-        const key = `purchases_${normalizedAcc}`;
-        const existing = JSON.parse(localStorage.getItem(key) || '[]');
-        const purchaseRecord = {
-          id: pokemon.id,
-          name: pokemon.name,
-          price: pokemon.price,
-          rarity: computeRarity(pokemon.base_experience || 0),
-          timestamp: Date.now(),
-          sprites: pokemon.sprites,
-          types: pokemon.types,
-          abilities: pokemon.abilities,
-          base_experience: pokemon.base_experience,
-          tokenId: mintedTokenId
-        };
-        existing.push(purchaseRecord);
-        localStorage.setItem(key, JSON.stringify(existing));
-        window.dispatchEvent(new CustomEvent('purchases.updated', { detail: { account: normalizedAcc } }));
-      } catch (e) { console.warn('Saving purchase failed', e); }
+      window.txModal.success(
+        'Purchase Successful!',
+        `You have successfully purchased ${pokemon.name}! Token ID: ${mintedTokenId || '(unknown)'}. Check your Collection to see it.`,
+        () => {
+          window.wallet.updateBalanceDisplayIfNeeded();
+        }
+      );
 
-      alert(`✅ Mint confirmed! Token ID: ${mintedTokenId || '(unknown)'}. Check your Collection.`);
-      await window.wallet.updateBalanceDisplayIfNeeded();
     } catch (err) {
       console.error('Buy (on-chain) failed', err);
       let message = 'Transaction failed';
       if (err?.reason) message = err.reason;
       else if (err?.message) message = err.message;
       if (err?.code === 4001 || err?.code === 'ACTION_REJECTED') message = 'Transaction was rejected';
-      alert('Buy failed: ' + message);
+      window.txModal.error('Purchase Failed', message);
     }
   }
 
   // ----------------- Player Listings (on-chain) -----------------
-  // We'll scan marketplace contract logs and reconstruct active listings.
   async function fetchActiveListingsFromChain() {
     try {
       assertConfig();
@@ -372,35 +354,38 @@ document.addEventListener('DOMContentLoaded', () => {
       const provider = await window.wallet.getProvider();
       const marketplaceAddr = window.CONTRACTS.MARKETPLACE_ADDRESS;
       if (!marketplaceAddr) return [];
-      // fetch all logs related to marketplace and parse using MARKETPLACE ABI
+      
       const mpIface = new ethers.Interface(window.ABIS.MARKETPLACE);
       const logs = await provider.getLogs({ address: marketplaceAddr, fromBlock: 0, toBlock: 'latest' });
-      const listingsMap = new Map(); // listingId -> listing object
+      const listingsMap = new Map();
+      
       for (const log of logs) {
         try {
           const parsed = mpIface.parseLog(log);
           const name = parsed.name;
-          if (name === 'PokemonListed' || name === 'PokeListed' || name === 'PokeListedEvent' || name === 'PokeListedEvent') {
-            // fields: listingId, tokenId, seller, price (ABI-dependent order)
+          if (name === 'PokemonListed' || name === 'PokeListed') {
             const args = parsed.args;
-            // tolerant unpack: try common positions
             const listingId = args.listingId ?? args[0];
             const tokenId = args.tokenId ?? args[1];
             const seller = args.seller ?? args[2];
             const price = args.price ?? args[3];
-            listingsMap.set(listingId.toString(), { listingId: listingId.toString(), tokenId: tokenId.toString(), seller: seller, price: price.toString(), active: true });
-          } else if (name === 'ListingBought' || name === 'PokemonBought' || name === 'ListingBoughtEvent') {
+            listingsMap.set(listingId.toString(), { 
+              listingId: listingId.toString(), 
+              tokenId: tokenId.toString(), 
+              seller: seller, 
+              price: price.toString(), 
+              active: true 
+            });
+          } else if (name === 'ListingBought' || name === 'PokemonBought') {
             const args = parsed.args;
             const listingId = args.listingId ?? args[0];
             listingsMap.delete(listingId.toString());
-          } else if (name === 'PokemonDelisted' || name === 'PokeDelisted' || name === 'PokeDelistedEvent') {
+          } else if (name === 'PokemonDelisted' || name === 'PokeDelisted') {
             const args = parsed.args;
             const listingId = args.listingId ?? args[0];
             listingsMap.delete(listingId.toString());
           }
-        } catch (e) {
-          // log didn't match this ABI — skip
-        }
+        } catch (e) { }
       }
       return Array.from(listingsMap.values());
     } catch (e) {
@@ -409,34 +394,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Render fetched listings above market grid
   async function renderPlayerListings() {
     try {
       const listings = await fetchActiveListingsFromChain();
       if (!listings || listings.length === 0) return;
 
-      // create container header
       const wrapper = document.createElement('div');
       wrapper.className = 'player-listings';
+      wrapper.style.marginBottom = '40px';
+      
       const header = document.createElement('div');
       header.style.display = 'flex';
       header.style.justifyContent = 'space-between';
       header.style.alignItems = 'center';
-      header.style.margin = '12px 0';
+      header.style.margin = '12px 0 20px 0';
+      
       const h = document.createElement('h3');
-      h.textContent = 'Player Listings';
+      h.textContent = '🔥 Player Listings';
       h.style.margin = 0;
+      h.style.fontSize = '1.5rem';
+      h.style.color = '#00ff9d';
       header.appendChild(h);
+      
+      const count = document.createElement('span');
+      count.textContent = `${listings.length} available`;
+      count.style.color = 'rgba(255,255,255,0.6)';
+      count.style.fontSize = '0.9rem';
+      header.appendChild(count);
+      
       wrapper.appendChild(header);
 
-      // create grid of listing cards
       const grid = document.createElement('div');
       grid.style.display = 'grid';
       grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
       grid.style.gap = '16px';
       grid.style.marginBottom = '18px';
 
-      // show up to 12 listings
       const toShow = listings.slice(0, 24);
       for (const L of toShow) {
         const c = await makeListingCard(L);
@@ -450,7 +443,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function makeListingCard(listing) {
-    // fetch NFT metadata from PokeNFT.tokenURI
     const card = document.createElement('div');
     card.className = 'market-card listed';
 
@@ -462,33 +454,45 @@ document.addEventListener('DOMContentLoaded', () => {
     const img = document.createElement('img');
     let nameText = `#${listing.tokenId}`;
     let rarity = 'Common';
+    let pokemonId = listing.tokenId;
+    
     try {
       assertConfig();
       await window.wallet.ensureProvider();
       const provider = await window.wallet.getProvider();
       const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT_ADDRESS, window.ABIS.POKEMON_NFT, provider);
       const uri = await nft.tokenURI(listing.tokenId);
-      // parse data URI or fetch JSON
       const meta = await parseTokenURI(uri);
+      
       if (meta) {
         if (meta.image) img.src = meta.image;
-        if (meta.name) nameText = `${meta.name}`;
+        if (meta.name) {
+          nameText = meta.name.charAt(0).toUpperCase() + meta.name.slice(1);
+          // Fetch from PokeAPI to get proper ID
+          try {
+            const pokeRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${meta.name.toLowerCase()}`);
+            if (pokeRes.ok) {
+              const pokeData = await pokeRes.json();
+              pokemonId = pokeData.id;
+            }
+          } catch (e) { }
+        }
         if (meta.attributes && meta.attributes.length > 0) {
           const rAttr = meta.attributes.find(a => a.trait_type === 'Rarity' || a.trait_type === 'rarity');
           if (rAttr) rarity = rAttr.value || rarity;
         }
       }
     } catch (e) {
-      // fallback image from placeholder
       img.src = 'images/pokeball.png';
       console.warn('makeListingCard metadata fetch failed', e);
     }
+    
     img.alt = nameText;
     art.appendChild(img);
 
     const nameEl = document.createElement('h4');
     nameEl.className = 'name';
-    nameEl.textContent = `${nameText} (NFT #${listing.tokenId})`;
+    nameEl.textContent = `#${pokemonId} ${nameText}`;
 
     const typesWrap = document.createElement('div');
     typesWrap.className = 'types';
@@ -497,24 +501,46 @@ document.addEventListener('DOMContentLoaded', () => {
     badge.textContent = rarity;
     typesWrap.appendChild(badge);
 
+    // Owner info
+    const currentUser = window.wallet?.getAccount?.()?.toLowerCase();
+    const isOwner = currentUser === listing.seller.toLowerCase();
+    
+    const ownerDiv = document.createElement('div');
+    ownerDiv.className = `owner-badge ${isOwner ? 'self' : ''}`;
+    ownerDiv.textContent = isOwner ? '👤 Your Listing' : `👤 Seller: ${shortAddress(listing.seller)}`;
+
     const abilities = document.createElement('div');
     abilities.className = 'abilities';
-    abilities.textContent = `Seller: ${shortAddress(listing.seller)} • Price: ${formatPrice(listing.price)}`;
+    abilities.textContent = `NFT Token #${listing.tokenId}`;
 
     const bottom = document.createElement('div');
     bottom.className = 'bottom-row';
+    const priceDiv = document.createElement('div');
+    priceDiv.className = 'price-pill';
+    priceDiv.textContent = formatPrice(listing.price);
+    bottom.appendChild(priceDiv);
 
     const actions = document.createElement('div');
     actions.className = 'actions';
-    const buyBtn = document.createElement('button');
-    buyBtn.className = 'btn-primary-action';
-    buyBtn.textContent = 'Buy Listed';
-    buyBtn.onclick = () => buyListedOnChain(listing.listingId, listing.price);
-    actions.appendChild(buyBtn);
+    
+    if (isOwner) {
+      const delistBtn = document.createElement('button');
+      delistBtn.className = 'btn-secondary-action';
+      delistBtn.textContent = 'Cancel Listing';
+      delistBtn.onclick = () => delistPokemon(listing.listingId, nameText, pokemonId);
+      actions.appendChild(delistBtn);
+    } else {
+      const buyBtn = document.createElement('button');
+      buyBtn.className = 'btn-primary-action';
+      buyBtn.textContent = 'Buy Now';
+      buyBtn.onclick = () => buyListedOnChain(listing.listingId, listing.price, nameText, pokemonId, listing.seller);
+      actions.appendChild(buyBtn);
+    }
 
     inner.appendChild(art);
     inner.appendChild(nameEl);
     inner.appendChild(typesWrap);
+    inner.appendChild(ownerDiv);
     inner.appendChild(abilities);
     inner.appendChild(bottom);
     inner.appendChild(actions);
@@ -524,10 +550,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function formatPrice(priceRaw) {
     try {
-      // priceRaw is hex / bigint / string from log — try to format using token decimals
-      // fallback: show raw
-      return (typeof priceRaw === 'string') ? priceRaw : priceRaw.toString();
-    } catch (e) { return String(priceRaw); }
+      // Try to format as PKCN with decimals
+      const bn = BigInt(priceRaw);
+      return ethers.formatUnits(bn, 18) + ' PKCN';
+    } catch (e) { 
+      return String(priceRaw) + ' PKCN';
+    }
   }
 
   function shortAddress(addr) {
@@ -542,45 +570,121 @@ document.addEventListener('DOMContentLoaded', () => {
         const txt = atob(b64);
         return JSON.parse(txt);
       }
-      // normal URL
       const res = await fetch(uri);
       if (!res.ok) return null;
       return await res.json();
     } catch (e) { console.warn('parseTokenURI failed', e); return null; }
   }
 
-  // Buy a listed NFT directly via marketplace.buyListedPokemon(listingId)
-  async function buyListedOnChain(listingId, priceRaw) {
+  async function buyListedOnChain(listingId, priceRaw, pokemonName, pokemonId, seller) {
     try {
       assertConfig();
+      
       if (!window.wallet.getAccount()) {
-        if (!confirm('You must connect your wallet to buy. Connect now?')) return;
+        const shouldConnect = await window.txModal.confirm({
+          title: 'Connect Wallet',
+          message: 'You must connect your wallet to buy listed Pokemon.',
+          confirmText: 'Connect Wallet'
+        });
+        if (!shouldConnect) return;
         await window.wallet.connectWallet();
       }
-      const signer = await window.wallet.getSigner();
+
+      const priceBig = BigInt(priceRaw.toString());
+      const humanPrice = ethers.formatUnits(priceBig, 18);
+      
+      const confirmed = await window.txModal.confirm({
+        title: 'Buy Listed Pokemon',
+        message: `Purchase this Pokemon from another player?`,
+        details: [
+          { label: 'Pokemon', value: `#${pokemonId} ${pokemonName}` },
+          { label: 'Seller', value: shortAddress(seller) },
+          { label: 'Price', value: `${humanPrice} PKCN`, highlight: true }
+        ],
+        confirmText: 'Buy Now',
+        cancelText: 'Cancel'
+      });
+      
+      if (!confirmed) return;
+
+      window.txModal.transaction({
+        title: 'Buying Listed Pokemon',
+        message: 'Processing purchase from marketplace...',
+        subtitle: 'The seller will receive the PKCN tokens.'
+      });
+
       const pkcn = window.CONTRACTS.PKCN_ADDRESS;
       const marketplaceAddr = window.CONTRACTS.MARKETPLACE_ADDRESS;
-      const meta = await window.wallet.fetchTokenMetadata();
-      const decimals = meta.decimals || 18;
 
-      // ensure approval (priceRaw may be string)
-      const priceBig = BigInt(priceRaw.toString());
       await ensureTokenApproval(pkcn, marketplaceAddr, priceBig);
 
+      const signer = await window.wallet.getSigner();
       const marketplace = new ethers.Contract(marketplaceAddr, window.ABIS.MARKETPLACE, signer);
       const tx = await marketplace.buyListedPokemon(BigInt(listingId));
-      alert('Transaction sent. Confirm in wallet...');
       await tx.wait();
-      alert('Purchase successful — listing bought. Refreshing...');
-      await window.wallet.updateBalanceDisplayIfNeeded();
-      renderGrid();
+      
+      window.txModal.success(
+        'Purchase Successful!',
+        `You have successfully purchased ${pokemonName} from ${shortAddress(seller)}! Check your Collection.`,
+        () => {
+          window.wallet.updateBalanceDisplayIfNeeded();
+          renderGrid();
+        }
+      );
+      
     } catch (e) {
       console.error('buyListedOnChain failed', e);
-      alert('Buy listed failed: ' + (e?.message || e));
+      let message = 'Failed to purchase listing';
+      if (e?.reason) message = e.reason;
+      else if (e?.message) message = e.message;
+      if (e?.code === 4001 || e?.code === 'ACTION_REJECTED') message = 'Transaction was rejected';
+      window.txModal.error('Purchase Failed', message);
     }
   }
 
-  // ----------------- small UI helpers -----------------
+  async function delistPokemon(listingId, pokemonName, pokemonId) {
+    try {
+      const confirmed = await window.txModal.confirm({
+        title: 'Cancel Listing',
+        message: `Remove your Pokemon from the marketplace?`,
+        details: [
+          { label: 'Pokemon', value: `#${pokemonId} ${pokemonName}` },
+          { label: 'Listing ID', value: `#${listingId}` }
+        ],
+        confirmText: 'Cancel Listing',
+        cancelText: 'Keep Listed',
+        dangerous: true
+      });
+      
+      if (!confirmed) return;
+
+      window.txModal.transaction({
+        title: 'Canceling Listing',
+        message: 'Removing your Pokemon from the marketplace...',
+        subtitle: 'Confirm the transaction in your wallet.'
+      });
+
+      const signer = await window.wallet.getSigner();
+      const marketplace = new ethers.Contract(window.CONTRACTS.MARKETPLACE_ADDRESS, window.ABIS.MARKETPLACE, signer);
+      const tx = await marketplace.delistPokemon(BigInt(listingId));
+      await tx.wait();
+      
+      window.txModal.success(
+        'Listing Canceled',
+        `Your ${pokemonName} has been removed from the marketplace.`,
+        () => renderGrid()
+      );
+      
+    } catch (e) {
+      console.error('delistPokemon failed', e);
+      let message = 'Failed to cancel listing';
+      if (e?.reason) message = e.reason;
+      else if (e?.message) message = e.message;
+      if (e?.code === 4001 || e?.code === 'ACTION_REJECTED') message = 'Transaction was rejected';
+      window.txModal.error('Delist Failed', message);
+    }
+  }
+
   function attachHandlers() {
     fetchMoreBtn?.addEventListener('click', loadPage);
     searchInput?.addEventListener('input', () => renderGrid());
@@ -588,26 +692,9 @@ document.addEventListener('DOMContentLoaded', () => {
     sortSelect?.addEventListener('change', () => renderGrid());
   }
 
-  // init
   (async function init() {
     await loadTypes();
     await loadPage();
     attachHandlers();
   })();
-
-  async function setApprovalForAllIfNeeded() {
-  const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT_ADDRESS, window.ABIS.POKEMON_NFT, await window.wallet.getSigner());
-  const me = (window.wallet.getAccount() || '').toLowerCase();
-  const isApproved = await nft.isApprovedForAll(me, window.CONTRACTS.MARKETPLACE_ADDRESS);
-  if (!isApproved) {
-    const ok = confirm('Approve marketplace to manage all your Pokemon (convenience)?');
-    if (!ok) return false;
-    const tx = await nft.setApprovalForAll(window.CONTRACTS.MARKETPLACE_ADDRESS, true);
-    await tx.wait();
-    return true;
-  }
-  return true;
-}
-
-
 });

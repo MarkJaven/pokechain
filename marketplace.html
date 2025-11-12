@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PokéChain – Marketplace</title>
+  <title>PokéChain — Marketplace</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="marketplace.css" />
+  <link rel="stylesheet" href="collection-marketplace.css" />
+  <link rel="stylesheet" href="transaction-modal.css" />
 </head>
 <body>
   <nav class="navbar navbar-expand-lg navbar-dark bg-transparent px-4 py-3">
@@ -19,6 +20,7 @@
         <li class="nav-item"><a class="nav-link" href="index.html">Home</a></li>
         <li class="nav-item"><a class="nav-link active" href="marketplace.html">Marketplace</a></li>
         <li class="nav-item"><a class="nav-link" href="collection.html">Collection</a></li>
+        <li class="nav-item"><a class="nav-link" href="tournament.html">Tournament</a></li>
         <li class="nav-item"><div id="pctBalance" class="small-muted px-2">—</div></li>
         <li class="nav-item"><button id="walletDisplay" class="btn btn-sm btn-outline-light">Connect</button></li>
       </ul>
@@ -54,9 +56,9 @@
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
-   <script src="./config.js"></script>
+  <script src="./config.js"></script>
   <script src="./wallet.js"></script>
- 
+  <script src="transaction-modal.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="./marketplace.js"></script>
   
@@ -70,7 +72,11 @@
             await window.wallet.connectWallet();
           } catch (e) {
             console.error(e);
-            alert(e.message || 'Failed to connect wallet');
+            if (window.txModal) {
+              window.txModal.error('Connection Failed', e.message || 'Failed to connect wallet');
+            } else {
+              alert(e.message || 'Failed to connect wallet');
+            }
           }
         } else {
           if (confirm('Disconnect wallet?')) {

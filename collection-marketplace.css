@@ -1,8 +1,9 @@
-/* ====== PokeChain Marketplace Styles ======
+/* ====== PokéChain Unified Marketplace & Collection Styles ======
+   - Merged styles from marketplace.css and collection.css
    - Fixed uniform card sizes
    - Real Pokéball background image
    - White common cards
-   =========================================== */
+   ================================================================= */
 
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&display=swap');
 
@@ -24,11 +25,91 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  overflow-y: auto;
+}
+
+main.container-fluid {
+  min-height: 100vh;
+  padding-top: 20px !important;
+  padding-bottom: 80px !important;
 }
 
 .small-muted {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.9rem;
+}
+
+/* ===== COLLECTION HERO SECTION ===== */
+.collection-hero {
+  padding: 15px 0 20px;
+}
+
+.collection-hero h1 {
+  margin-bottom: 8px;
+  font-size: 2rem;
+}
+
+.collection-hero .small-muted {
+  font-size: 0.9rem;
+}
+
+/* ===== COLLECTION STATS ===== */
+.collection-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 30px;
+}
+
+.stat-card {
+  background: linear-gradient(180deg, rgba(20, 20, 30, 0.95), rgba(10, 10, 20, 0.9));
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  padding: 15px;
+  text-align: center;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90px;
+  height: 90px;
+  background-image: url('images/pokeball.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.03;
+  z-index: 0;
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(0, 255, 157, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 255, 157, 0.2);
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: #00ff9d;
+  display: block;
+  margin-bottom: 3px;
+  position: relative;
+  z-index: 1;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: relative;
+  z-index: 1;
 }
 
 /* ===== CARD GRID ===== */
@@ -93,6 +174,40 @@ body {
   height: 100%;
 }
 
+/* ===== UNIQUE ID BADGE - TOP LEFT CORNER ===== */
+.unique-id-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  background: rgba(0, 0, 0, 0.332);
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 300;
+  border-radius: 3px;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.237);
+  letter-spacing: 0.5px;
+}
+
+/* ===== NFT TOKEN ID BADGE - BOTTOM LEFT ===== */
+.token-id-badge {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  z-index: 3;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  letter-spacing: 0.4px;
+}
+
 /* ===== CARD CONTENT - FIXED SIZES ===== */
 .market-card .art {
   background: rgba(255, 255, 255, 0.05);
@@ -112,7 +227,7 @@ body {
   width: auto;
   height: auto;
   object-fit: contain;
-  filter: drop-shadow(0 8px 16px rgba(0,0,0,0.6));
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.6));
   transition: transform 0.3s ease;
 }
 
@@ -133,12 +248,15 @@ body {
   flex-shrink: 0;
 }
 
-.market-card .types {
+/* ===== TYPE BADGES ===== */
+.market-card .types,
+.types {
   margin-bottom: 12px;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   flex-shrink: 0;
+  justify-content: center;
 }
 
 .type-badge {
@@ -154,7 +272,9 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.market-card .abilities {
+/* ===== ABILITIES ===== */
+.market-card .abilities,
+.abilities {
   color: rgba(234, 234, 234, 0.85);
   font-weight: 500;
   font-size: 0.85rem;
@@ -167,6 +287,21 @@ body {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  text-align: center;
+}
+
+/* ===== OWNED BADGE ===== */
+.owned-badge {
+  background: rgba(0, 255, 157, 0.15);
+  color: #00ff9d;
+  padding: 10px 20px;
+  border-radius: 25px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: center;
+  margin: 12px 0;
+  border: 1px solid rgba(0, 255, 157, 0.3);
+  flex-shrink: 0;
 }
 
 /* ===== PRICE + BUTTONS ===== */
@@ -187,6 +322,11 @@ body {
   font-size: 1rem;
   box-shadow: 0 4px 12px rgba(0, 255, 157, 0.2);
   border: 1px solid rgba(0, 255, 157, 0.3);
+}
+
+.supply-pill {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 /* ===== BUTTONS ===== */
@@ -232,6 +372,63 @@ body {
   box-shadow: 0 6px 20px rgba(0, 255, 157, 0.3);
 }
 
+/* ===== SELL BUTTON - ORANGE STYLE ===== */
+.btn-sell {
+  background: linear-gradient(180deg, #ff6b00, #cc5500) !important;
+  color: #fff !important;
+  width: 100%;
+  margin-top: 0 !important;
+}
+
+.btn-sell:hover {
+  filter: brightness(1.15) !important;
+  box-shadow: 0 6px 20px rgba(255, 107, 0, 0.4) !important;
+}
+
+/* ===== MARKETPLACE BUTTON ===== */
+.btn-marketplace {
+  background: linear-gradient(135deg, #00ff9d, #00c474);
+  color: #000;
+  padding: 10px 25px;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  display: inline-block;
+  transition: all 0.3s ease;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.85rem;
+}
+
+.btn-marketplace:hover {
+  filter: brightness(1.2);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 255, 157, 0.4);
+  color: #000;
+}
+
+/* ===== EMPTY COLLECTION STATE ===== */
+.empty-collection {
+  text-align: center;
+  padding: 50px 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 20px;
+  border: 2px dashed rgba(255, 255, 255, 0.1);
+  margin: 30px 0;
+}
+
+.empty-collection h3 {
+  font-size: 1.3rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 12px;
+}
+
+.empty-collection p {
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 20px;
+  font-size: 0.85rem;
+}
+
 /* ===== RARITY COLORS ===== */
 
 /* COMMON - WHITE/SILVER */
@@ -247,54 +444,64 @@ body {
 }
 
 .market-card.uncommon {
-  background: linear-gradient(180deg, rgba(0,255,157,0.15), rgba(0,120,60,0.5));
-  border-color: rgba(0,255,157,0.4);
-  box-shadow: 0 12px 40px rgba(0,255,157,0.2);
+  background: linear-gradient(180deg, rgba(0, 255, 157, 0.15), rgba(0, 120, 60, 0.5));
+  border-color: rgba(0, 255, 157, 0.4);
+  box-shadow: 0 12px 40px rgba(0, 255, 157, 0.2);
 }
 
 .market-card.uncommon:hover {
-  box-shadow: 0 30px 80px rgba(0,255,157,0.35);
+  box-shadow: 0 30px 80px rgba(0, 255, 157, 0.35);
 }
 
 .market-card.rare {
-  background: linear-gradient(180deg, rgba(58,160,255,0.15), rgba(0,70,150,0.6));
-  border-color: rgba(58,160,255,0.5);
-  box-shadow: 0 12px 40px rgba(58,160,255,0.25);
+  background: linear-gradient(180deg, rgba(58, 160, 255, 0.15), rgba(0, 70, 150, 0.6));
+  border-color: rgba(58, 160, 255, 0.5);
+  box-shadow: 0 12px 40px rgba(58, 160, 255, 0.25);
 }
 
 .market-card.rare:hover {
-  box-shadow: 0 30px 80px rgba(58,160,255,0.4);
+  box-shadow: 0 30px 80px rgba(58, 160, 255, 0.4);
 }
 
 .market-card.epic {
-  background: linear-gradient(180deg, rgba(199,138,255,0.2), rgba(80,30,130,0.65));
-  border-color: rgba(199,138,255,0.5);
-  box-shadow: 0 12px 40px rgba(199,138,255,0.25);
+  background: linear-gradient(180deg, rgba(199, 138, 255, 0.2), rgba(80, 30, 130, 0.65));
+  border-color: rgba(199, 138, 255, 0.5);
+  box-shadow: 0 12px 40px rgba(199, 138, 255, 0.25);
 }
 
 .market-card.epic:hover {
-  box-shadow: 0 30px 80px rgba(199,138,255,0.4);
+  box-shadow: 0 30px 80px rgba(199, 138, 255, 0.4);
 }
 
 @keyframes glowLegendary {
   0%, 100% { 
-    box-shadow: 0 12px 60px rgba(255,215,0,0.3);
-    border-color: rgba(255,215,0,0.6);
+    box-shadow: 0 12px 60px rgba(255, 215, 0, 0.3);
+    border-color: rgba(255, 215, 0, 0.6);
   }
   50% { 
-    box-shadow: 0 28px 100px rgba(255,215,0,0.55);
-    border-color: rgba(255,215,0,0.9);
+    box-shadow: 0 28px 100px rgba(255, 215, 0, 0.55);
+    border-color: rgba(255, 215, 0, 0.9);
   }
 }
 
 .market-card.legendary {
-  background: linear-gradient(180deg, rgba(255,215,0,0.25), rgba(100,80,0,0.7));
-  border-color: rgba(255,215,0,0.7);
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.25), rgba(100, 80, 0, 0.7));
+  border-color: rgba(255, 215, 0, 0.7);
   animation: glowLegendary 3s ease-in-out infinite;
 }
 
 .market-card.legendary:hover {
   transform: translateY(-8px) scale(1.02);
+}
+
+/* ===== PLAYER LISTINGS ===== */
+.player-listings {
+  margin-bottom: 20px;
+}
+
+.player-listings .market-card {
+  height: auto;
+  min-height: 260px;
 }
 
 /* ===== LOADER ===== */
@@ -334,6 +541,14 @@ body {
   .market-card .art {
     height: 180px;
   }
+
+  .collection-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+  }
 }
 
 @media (max-width: 480px) {
@@ -342,28 +557,15 @@ body {
     gap: 20px;
   }
 
-  /* Add to marketplace.css and collection.css (copy/paste at bottom) */
+  .collection-stats {
+    grid-template-columns: 1fr;
+  }
 
-/* NFT Token ID badge (subtle watermark at bottom-left) */
-.token-id-badge {
-  position: absolute;
-  bottom: 12px;
-  left: 12px;
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  padding: 6px 8px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.06);
-  z-index: 3;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.6);
-  backdrop-filter: blur(4px);
-  letter-spacing: 0.4px;
-}
+  .stat-card {
+    padding: 12px;
+  }
 
-/* Slight visual tweak for listed items container */
-.player-listings { margin-bottom: 20px; }
-.player-listings .market-card { height: auto; min-height: 260px; }
-
+  .stat-value {
+    font-size: 1.6rem;
+  }
 }
