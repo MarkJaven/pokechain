@@ -318,7 +318,7 @@ async function fetchOwnedTokens(provider, nft, addr) {
   return [...owned].map(Number);
 }
 
-// ===== IMPROVED: Better error handling and loading states =====
+// ===== IMPROVED: Better error handling and loading states WITH DEDUPLICATION =====
 async function renderCollection() {
   const grid = document.getElementById('allCollectionGrid');
   const totalEl = document.getElementById('totalPokemon');
@@ -326,11 +326,15 @@ async function renderCollection() {
   const emptyState = document.getElementById('emptyState');
   const loadingEl = document.getElementById('collectionLoading');
 
+  // ADD: Deduplication tracking
+  const renderedTokenIds = new Set();
+  
   // Show loading state
   if (loadingEl) loadingEl.style.display = 'block';
-  if (grid) grid.style.display = 'none';
-  
-  if (grid) grid.innerHTML = '';
+  if (grid) {
+    grid.style.display = 'none';
+    grid.innerHTML = ''; // Clear immediately to prevent duplicates
+  }
   
   const provider = await safeGetProvider();
   if (!provider) {
@@ -385,96 +389,94 @@ async function renderCollection() {
     if (grid) grid.style.display = 'grid';
     if (emptyState) emptyState.style.display = 'none';
 
-    // Process tokens in batches to avoid overwhelming the UI
-    const batchSize = 10;
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize);
+    // Process tokens sequentially to avoid race conditions
+    for (const uniqueId of ids) {
+      // Skip if already rendered
+      if (renderedTokenIds.has(uniqueId)) {
+        console.log(`⚠️ Skipping duplicate token #${uniqueId}`);
+        continue;
+      }
+      renderedTokenIds.add(uniqueId);
       
-      await Promise.all(batch.map(async (uniqueId) => {
-        try {
-          // Get NFT metadata from contract
-          const meta = await resolveMetadata(nft, uniqueId);
-          if (!meta) {
-            console.warn(`No metadata found for token #${uniqueId}`);
-            return;
+      try {
+        // Get NFT metadata from contract
+        const meta = await resolveMetadata(nft, uniqueId);
+        if (!meta) {
+          console.warn(`No metadata found for token #${uniqueId}`);
+          continue;
+        }
+        
+        console.log('NFT metadata for #' + uniqueId + ':', meta);
+        
+        // Extract basic info from NFT metadata
+        let name = meta.name || `Token ${uniqueId}`;
+        let image = meta.image ? ipfsToHttp(meta.image) : '';
+        let rarity = 'Common';
+        
+        // Get rarity from attributes
+        if (meta.attributes && Array.isArray(meta.attributes)) {
+          const rarityAttr = meta.attributes.find(a => 
+            a.trait_type?.toLowerCase() === 'rarity'
+          );
+          if (rarityAttr && rarityAttr.value) {
+            rarity = rarityAttr.value;
+          }
+        }
+        
+        // Now fetch additional data from PokeAPI using the pokemon name
+        let pokemonId = uniqueId; // fallback
+        let types = [];
+        let abilities = '';
+        
+        const pokeData = await fetchPokeAPIData(name);
+        if (pokeData) {
+          console.log('PokeAPI data for ' + name + ':', pokeData);
+          
+          // Get Pokemon ID from PokeAPI
+          pokemonId = pokeData.id;
+          
+          // Get types from PokeAPI
+          if (pokeData.types && Array.isArray(pokeData.types)) {
+            types = pokeData.types.map(t => t.type.name);
           }
           
-          console.log('NFT metadata for #' + uniqueId + ':', meta);
-          
-          // Extract basic info from NFT metadata
-          let name = meta.name || `Token ${uniqueId}`;
-          let image = meta.image ? ipfsToHttp(meta.image) : '';
-          let rarity = 'Common';
-          
-          // Get rarity from attributes
-          if (meta.attributes && Array.isArray(meta.attributes)) {
-            const rarityAttr = meta.attributes.find(a => 
-              a.trait_type?.toLowerCase() === 'rarity'
-            );
-            if (rarityAttr && rarityAttr.value) {
-              rarity = rarityAttr.value;
+          // Get abilities from PokeAPI
+          if (pokeData.abilities && Array.isArray(pokeData.abilities)) {
+            const abilityNames = pokeData.abilities
+              .slice(0, 3)
+              .map(a => a.ability?.name || '')
+              .filter(Boolean);
+            if (abilityNames.length > 0) {
+              abilities = `Abilities: ${abilityNames.join(', ')}`;
             }
           }
           
-          // Now fetch additional data from PokeAPI using the pokemon name
-          let pokemonId = uniqueId; // fallback
-          let types = [];
-          let abilities = '';
-          
-          const pokeData = await fetchPokeAPIData(name);
-          if (pokeData) {
-            console.log('PokeAPI data for ' + name + ':', pokeData);
-            
-            // Get Pokemon ID from PokeAPI
-            pokemonId = pokeData.id;
-            
-            // Get types from PokeAPI
-            if (pokeData.types && Array.isArray(pokeData.types)) {
-              types = pokeData.types.map(t => t.type.name);
-            }
-            
-            // Get abilities from PokeAPI
-            if (pokeData.abilities && Array.isArray(pokeData.abilities)) {
-              const abilityNames = pokeData.abilities
-                .slice(0, 3)
-                .map(a => a.ability?.name || '')
-                .filter(Boolean);
-              if (abilityNames.length > 0) {
-                abilities = `Abilities: ${abilityNames.join(', ')}`;
-              }
-            }
-            
-            // Capitalize name properly
-            name = name.charAt(0).toUpperCase() + name.slice(1);
-          }
-          
-          console.log('✅ Final card data:', { 
-            uniqueId, 
-            pokemonId, 
-            name, 
-            rarity, 
-            types, 
-            abilities 
-          });
-          
-          const card = makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities });
-          
-          // Add card to grid in the correct order
-          if (grid) {
-            grid.appendChild(card);
-          }
-          
+          // Capitalize name properly
+          name = name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        
+        console.log('✅ Final card data:', { 
+          uniqueId, 
+          pokemonId, 
+          name, 
+          rarity, 
+          types, 
+          abilities 
+        });
+        
+        const card = makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities });
+        
+        // Double-check token isn't already in DOM before adding
+        if (grid && !grid.querySelector(`[data-token-id="${uniqueId}"]`)) {
+          grid.appendChild(card);
           total++;
           if (['rare','epic','legendary'].includes(rarity.toLowerCase())) rareCount++;
-          
-        } catch (tokenError) {
-          console.error(`Error processing token #${uniqueId}:`, tokenError);
+        } else {
+          console.log(`⚠️ DOM already contains token #${uniqueId}, skipping`);
         }
-      }));
-      
-      // Small delay between batches to keep UI responsive
-      if (i + batchSize < ids.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        
+      } catch (tokenError) {
+        console.error(`Error processing token #${uniqueId}:`, tokenError);
       }
     }
 

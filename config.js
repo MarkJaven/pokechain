@@ -30,21 +30,18 @@ window.ABIS = {
   ],
   
   MARKETPLACE: [
-    "function buyPokemon(string memory name, string memory rarity, string memory imageURI, uint256 price) public returns (uint256)",
-    "function listPokemon(uint256 tokenId, uint256 price) public",
-    "function buyListedPokemon(uint256 listingId) public",
-    "function delistPokemon(uint256 listingId) public",
-    
-    // Events - BOTH name variations (PokemonListed & PokeListed)
-     "event PokemonListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
-    "event PokeListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
-    
-     "event PokemonBought(uint256 indexed listingId, address indexed buyer)",
-    "event PokeBought(uint256 indexed listingId, address indexed buyer)",
-
-    "event PokemonDelisted(uint256 indexed listingId)",
-    "event PokeDelisted(uint256 indexed listingId)"
-  ],
+  "function buyPokemon(string memory name, string memory rarity, string memory imageURI, uint256 price) public returns (uint256)",
+  "function listPokemon(uint256 tokenId, uint256 price) public returns (uint256)", // Note: returns uint256
+  "function buyListedPokemon(uint256 listingId) public",
+  "function cancelListing(uint256 listingId) public", // <-- FIX: This is the real function name
+  "function remainingSupply(string calldata rarity) external view returns (uint256)",
+  
+  // Events (your events are correct)
+  "event PokeListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
+  "event ListingBought(uint256 indexed listingId, uint256 indexed tokenId, address indexed buyer, uint256 price)",
+  "event PokeDelisted(uint256 indexed listingId, uint256 indexed tokenId)",
+  "event PokePurchased(address indexed buyer, uint256 indexed tokenId, uint256 price)"
+],
   
   ERC20_MIN: [
     "function balanceOf(address account) view returns (uint256)",

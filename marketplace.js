@@ -48,6 +48,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ===== NEW: Cleanup legacy ghost listings =====
+  async function cleanupLegacyListings() {
+    try {
+      const saved = localStorage.getItem('recentlyPurchasedListings');
+      const legacy = saved ? JSON.parse(saved) : [];
+      
+      // Add all legacy listings to the exclusion set
+      legacy.forEach(id => recentlyPurchasedListings.add(id));
+      
+      console.log(`🧹 Cleaned up ${legacy.length} legacy listings`);
+    } catch (e) {
+      console.warn('Legacy cleanup failed:', e);
+    }
+  }
+
+  // ===== NEW: Helper for gas estimation issues =====
+  async function callWithManualGas(contract, method, args = [], options = {}) {
+    try {
+      // Try normal call first
+      return await contract[method](...args);
+    } catch (e) {
+      if (e.code === 'UNPREDICTABLE_GAS_LIMIT' || e.code === 'CALL_EXCEPTION') {
+        console.warn(`Gas estimation failed for ${method}, using manual limit`);
+        return await contract[method](...args, { gasLimit: options.gasLimit || 100000 });
+      }
+      throw e;
+    }
+  }
+
   // ===== Main Variables =====
   const marketGrid = document.getElementById('officialMarketGrid');
   const playerListingsGrid = document.getElementById('playerListingsGrid');
@@ -387,7 +416,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ===== Player Listings Functions - COMPLETELY FIXED =====
+  // ===== Player Listings Functions - COMPLETELY FIXED WITH BLOCKCHAIN VERIFICATION =====
+  // ===== FINAL FIXED VERSION: Handles both escrow and approval patterns =====
   window.fetchActiveListingsFromChain = async function () {
     try {
       assertConfig();
@@ -401,97 +431,115 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const latest = await provider.getBlockNumber();
-      // CRITICAL: Increase block range to ensure we catch all events
       const fromBlock = Math.max(0, latest - 500000);
       
       console.log(`🔍 Fetching marketplace events from blocks ${fromBlock} → ${latest}`);
 
       const mpIface = new ethers.Interface(window.ABIS.MARKETPLACE);
       
-      // Get all logs from the marketplace contract
+      // Get all logs from marketplace
       const logs = await provider.getLogs({
         address: marketplaceAddr,
         fromBlock: fromBlock,
         toBlock: 'latest'
       });
       
-      console.log(`📝 Found ${logs.length} total logs from marketplace`);
+      console.log(`📝 Found ${logs.length} marketplace logs`);
 
-      // CRITICAL: Sort chronologically to process events in order
+      // Sort chronologically
       logs.sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex);
       
       const listingsMap = new Map();
-      const inactiveListingsSet = new Set(); // Track inactive listings
+      const processedSet = new Set(); // Track processed events to avoid duplicates
       
       for (const log of logs) {
         try {
           const parsed = mpIface.parseLog(log);
+          if (!parsed) continue;
+          
           const eventName = parsed.name;
           const args = parsed.args;
-          
-          console.log(`📋 Processing event: ${eventName} at block ${log.blockNumber}`);
+          const eventKey = `${log.blockNumber}-${log.logIndex}`;
 
-          // Handle BOTH event name variants
+          // Skip duplicates
+          if (processedSet.has(eventKey)) continue;
+          processedSet.add(eventKey);
+
+          // Handle listing events (both variants)
           if (eventName === 'PokemonListed' || eventName === 'PokeListed') {
             const listingId = args.listingId?.toString() || args[0]?.toString();
-            const tokenId = args.tokenId?.toString() || args[1]?.toString();
-            const seller = args.seller || args[2];
-            const price = args.price || args[3];
+            
+            // If this listing was already removed by a later event, don't add it
+            if (recentlyPurchasedListings.has(listingId)) {
+              console.log(`⚠️ Skipping listing #${listingId} (in recently purchased)`);
+              continue;
+            }
             
             listingsMap.set(listingId, {
               listingId,
-              tokenId,
-              seller,
-              price,
+              tokenId: args.tokenId?.toString() || args[1]?.toString(),
+              seller: args.seller || args[2],
+              price: args.price || args[3],
               active: true,
-              eventName,
-              blockNumber: log.blockNumber,
-              logIndex: log.logIndex
+              blockNumber: log.blockNumber
             });
-            console.log(`✅ ADDED: Listing #${listingId} for token #${tokenId} by ${seller} (${eventName})`);
+            console.log(`✅ ADDED: Listing #${listingId} (${eventName})`);
           }
           
-          // Handle delisting events (both variants)
-          else if (eventName === 'PokemonDelisted' || eventName === 'PokeDelisted') {
+          // Handle removal events (both variants)
+          else if (eventName === 'PokemonDelisted' || eventName === 'PokeDelisted' ||
+                   eventName === 'PokemonBought' || eventName === 'PokeBought') {
             const listingId = args.listingId?.toString() || args[0]?.toString();
             if (listingsMap.has(listingId)) {
               listingsMap.delete(listingId);
-              inactiveListingsSet.add(listingId); // Mark as inactive
-              console.log(`❌ REMOVED: Delisted listing #${listingId}`);
-            }
-          }
-          
-          // Handle purchase events (both variants) - CRITICAL FIX
-          else if (eventName === 'PokemonBought' || eventName === 'PokeBought') {
-            const listingId = args.listingId?.toString() || args[0]?.toString();
-            if (listingsMap.has(listingId)) {
-              listingsMap.delete(listingId);
-              inactiveListingsSet.add(listingId); // Mark as inactive
-              console.log(`❌ REMOVED: Sold listing #${listingId}`);
-              
-              // Add to recently purchased set to prevent reappearance
               recentlyPurchasedListings.add(listingId);
+              console.log(`❌ REMOVED: Listing #${listingId} (${eventName})`);
             }
           }
           
         } catch (parseError) {
-          // Log non-matching logs for debugging
-          console.debug("⚠️ Log doesn't match Marketplace ABI:", log.topics[0]);
+          continue;
         }
       }
 
-      // CRITICAL: Filter out inactive and recently purchased listings
-      const finalListings = Array.from(listingsMap.values());
-      const filteredListings = finalListings.filter(listing => 
-        !inactiveListingsSet.has(listing.listingId) && 
-        !recentlyPurchasedListings.has(listing.listingId)
+      // Verify ownership for remaining listings (supports both escrow and approval patterns)
+      const finalListings = [];
+      const marketplaceAddrLower = marketplaceAddr.toLowerCase();
+      
+      for (const listing of listingsMap.values()) {
+        try {
+          const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT_ADDRESS, window.ABIS.POKEMON_NFT, provider);
+          const currentOwner = await nft.ownerOf(listing.tokenId).catch(() => null);
+          
+          // Accept if token is owned by seller (approval pattern) OR marketplace (escrow pattern)
+          if (currentOwner && (
+            currentOwner.toLowerCase() === listing.seller.toLowerCase() ||
+            currentOwner.toLowerCase() === marketplaceAddrLower
+          )) {
+            finalListings.push(listing);
+            const status = currentOwner.toLowerCase() === marketplaceAddrLower ? 'escrow' : 'approval';
+            console.log(`✅ VERIFIED: Listing #${listing.listingId} for token #${listing.tokenId} (${status})`);
+          } else {
+            console.log(`❌ SKIPPING: Token #${listing.tokenId} owned by ${currentOwner}, expected seller (${listing.seller}) or marketplace`);
+          }
+        } catch (e) {
+          console.warn(`⚠️ Couldn't verify ownership for token #${listing.tokenId}:`, e);
+        }
+      }
+
+      // Filter out recently purchased
+      const filteredListings = finalListings.filter(
+        listing => !recentlyPurchasedListings.has(listing.listingId)
       );
       
-      console.log(`✅ FINAL: ${filteredListings.length} active player listings (filtered from ${finalListings.length})`);
+      console.log(`✅ FINAL: ${filteredListings.length} verified active listings`);
       
-      // Update active listings cache
+      // Update cache
       activeListings.clear();
       filteredListings.forEach(listing => activeListings.set(listing.listingId, listing));
+      
+      // Persist
+      saveRecentlyPurchased();
       
       return filteredListings;
       
@@ -508,32 +556,48 @@ document.addEventListener('DOMContentLoaded', () => {
       // Show loader
       if (playerListingsLoader) playerListingsLoader.style.display = 'flex';
       
+      // Clear grid immediately to prevent duplicates
+      playerListingsGrid.innerHTML = '';
+      
       const listings = await window.fetchActiveListingsFromChain();
+      
+      // Deduplicate listings by tokenId (keep newest)
+      const uniqueListings = new Map();
+      listings.forEach(listing => {
+        const existing = uniqueListings.get(listing.tokenId);
+        if (!existing || listing.blockNumber > existing.blockNumber) {
+          uniqueListings.set(listing.tokenId, listing);
+        }
+      });
+      
+      const finalListings = Array.from(uniqueListings.values());
       
       // Update count
       const countEl = document.getElementById('playerListingCount');
       if (countEl) {
-        countEl.textContent = listings.length > 0 ? `${listings.length} available` : 'No listings yet';
+        countEl.textContent = finalListings.length > 0 ? `${finalListings.length} available` : 'No listings yet';
       }
 
-      // Clear grid completely
-      playerListingsGrid.innerHTML = '';
-
-      if (!listings || listings.length === 0) {
+      if (finalListings.length === 0) {
         console.log('⚠️ No active player listings found');
         if (playerListingsLoader) playerListingsLoader.style.display = 'none';
         return;
       }
 
-      // Render only active listings (purchased ones are already filtered out)
-      for (const L of listings) {
-        const card = await makeListingCard(L);
+      // Render sequentially to avoid race conditions
+      for (const listing of finalListings) {
+        // Check if card already exists
+        if (playerListingsGrid.querySelector(`[data-listing-id="${listing.listingId}"]`)) {
+          console.log(`⚠️ Skipping duplicate listing #${listing.listingId}`);
+          continue;
+        }
+        
+        const card = await makeListingCard(listing);
         playerListingsGrid.appendChild(card);
       }
       
       if (playerListingsLoader) playerListingsLoader.style.display = 'none';
-      
-      console.log(`✅ Rendered ${listings.length} active listings (purchased ones hidden)`);
+      console.log(`✅ Rendered ${finalListings.length} active listings`);
       
     } catch (e) {
       console.error('❌ renderPlayerListings failed:', e);
@@ -810,47 +874,89 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function delistPokemon(listingId, pokemonName, pokemonId) {
+  try {
+    assertConfig();
+    await window.wallet.ensureProvider();
+    
+    const signer = await window.wallet.getSigner();
+    const marketplace = new ethers.Contract(
+      window.CONTRACTS.MARKETPLACE_ADDRESS, 
+      window.ABIS.MARKETPLACE, 
+      signer
+    );
+
+    const confirmed = await window.txModal.confirm({
+      title: 'Cancel Listing',
+      message: `Remove your Pokemon from the marketplace?`,
+      details: [
+        { label: 'Pokemon', value: `#${pokemonId} ${pokemonName}` },
+        { label: 'Listing ID', value: `#${listingId}` }
+      ],
+      confirmText: 'Cancel Listing',
+      cancelText: 'Keep Listed',
+      dangerous: true
+    });
+
+    if (!confirmed) return;
+
+    window.txModal.transaction({
+      title: 'Canceling Listing',
+      message: 'Removing your Pokemon from the marketplace...',
+      subtitle: 'Confirm the transaction in your wallet.'
+    });
+
+    // Execute delist transaction
+    // Your contract's function is called cancelListing(), not delistPokemon()
+    let tx;
     try {
-      const confirmed = await window.txModal.confirm({
-        title: 'Cancel Listing',
-        message: `Remove your Pokemon from the marketplace?`,
-        details: [
-          { label: 'Pokemon', value: `#${pokemonId} ${pokemonName}` },
-          { label: 'Listing ID', value: `#${listingId}` }
-        ],
-        confirmText: 'Cancel Listing',
-        cancelText: 'Keep Listed',
-        dangerous: true
-      });
-
-      if (!confirmed) return;
-
-      window.txModal.transaction({
-        title: 'Canceling Listing',
-        message: 'Removing your Pokemon from the marketplace...',
-        subtitle: 'Confirm the transaction in your wallet.'
-      });
-
-      const signer = await window.wallet.getSigner();
-      const marketplace = new ethers.Contract(window.CONTRACTS.MARKETPLACE_ADDRESS, window.ABIS.MARKETPLACE, signer);
-      const tx = await marketplace.delistPokemon(BigInt(listingId));
-      await tx.wait();
-
-      window.txModal.success(
-        'Listing Canceled',
-        `Your ${pokemonName} has been removed from the marketplace.`,
-        () => renderPlayerListings() // Refresh player listings
-      );
-    } catch (e) {
-      console.error('delistPokemon failed', e);
-      let message = 'Failed to cancel listing';
-      if (e?.reason) message = e.reason;
-      else if (e?.message) message = e.message;
-      if (e?.code === 4001 || e?.code === 'ACTION_REJECTED') message = 'Transaction was rejected';
-      window.txModal.error('Delist Failed', message);
+      tx = await marketplace.cancelListing(BigInt(listingId));
+    } catch (gasError) {
+      console.warn('Gas estimation failed, trying with manual limit:', gasError);
+      tx = await marketplace.cancelListing(BigInt(listingId), { gasLimit: 50000 });
     }
-  }
+    
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) {
+      throw new Error('Transaction reverted on blockchain');
+    }
 
+    // Update caches on success
+    activeListings.delete(listingId);
+    recentlyPurchasedListings.add(listingId);
+    saveRecentlyPurchased();
+    
+    window.txModal.success(
+      'Listing Canceled',
+      `Your ${pokemonName} has been removed from the marketplace.`,
+      () => {
+        renderPlayerListings();
+        if (typeof renderCollection === 'function') {
+          renderCollection();
+        }
+      }
+    );
+  } catch (e) {
+    console.error('delistPokemon failed:', e);
+    
+    let message = 'Failed to cancel listing';
+    if (e?.code === 4001) {
+      message = 'Transaction was rejected';
+    } else if (e?.reason) {
+      message = e.reason;
+    } else if (e?.message) {
+      if (e.message.includes('user rejected')) {
+        message = 'Transaction was rejected';
+      } else if (e.message.includes('revert')) {
+        message = 'Cannot cancel: you are not the seller or listing is already inactive';
+      } else {
+        message = e.message;
+      }
+    }
+    
+    window.txModal.error('Delist Failed', message);
+    setTimeout(() => renderPlayerListings(), 1500);
+  }
+}
   // ===== Toggle Logic =====
   function setMarketplaceMode(mode) {
     const officialSection = document.getElementById('officialMarketSection');
@@ -888,7 +994,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('togglePlayer')?.addEventListener('click', () => setMarketplaceMode('player'));
   }
 
-  // ===== CRITICAL: Persist recently purchased listings across sessions =====
+  // ===== Persist recently purchased listings across sessions =====
   function saveRecentlyPurchased() {
     try {
       localStorage.setItem('recentlyPurchasedListings', JSON.stringify([...recentlyPurchasedListings]));
@@ -909,15 +1015,50 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ===== CRITICAL: Real-time event listeners =====
+  function setupEventListeners() {
+    try {
+      if (!window.wallet || !window.CONTRACTS) return;
+      
+      window.wallet.ensureProvider().then(provider => {
+        const marketplace = new ethers.Contract(
+          window.CONTRACTS.MARKETPLACE_ADDRESS,
+          window.ABIS.MARKETPLACE,
+          provider
+        );
+        
+        // Listen for all marketplace events
+        marketplace.on('*', (event) => {
+          console.log('📡 Marketplace event detected:', event.event || event);
+          
+          // Debounced refresh
+          clearTimeout(window.marketplaceRefreshTimeout);
+          window.marketplaceRefreshTimeout = setTimeout(() => {
+            console.log('🔄 Refreshing listings due to blockchain event');
+            renderPlayerListings();
+            if (typeof renderCollection === 'function') {
+              renderCollection();
+            }
+          }, 2000);
+        });
+        
+        console.log('✅ Event listeners set up for real-time updates');
+      });
+    } catch (e) {
+      console.warn('Failed to set up event listeners:', e);
+    }
+  }
+
   // ===== Initialization =====
   (async function init() {
     // Load recently purchased listings
+    await cleanupLegacyListings();
     loadRecentlyPurchased();
-    
     await loadTypes();
     await loadTokenDecimals(); // Load decimals first
     await loadPage();
     attachHandlers();
+    setupEventListeners(); // Add real-time listeners
     
     // Load player listings in background
     setTimeout(() => {

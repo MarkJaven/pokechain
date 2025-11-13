@@ -784,4 +784,20 @@ main.container-fluid {
     font-size: 0.75rem;
     padding: 8px 12px;
   }
+  /* Add to your CSS file */
+.purchase-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  z-index: 10;
+  border-radius: 8px;
+}
 }
