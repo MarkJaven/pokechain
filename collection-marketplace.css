@@ -527,6 +527,208 @@ main.container-fluid {
   color: #00ff9d !important;
 }
 
+/* === PLAYER LISTINGS HEADER SECTION === */
+.player-listings {
+  margin-bottom: 40px;
+  border: 1px solid rgba(0, 255, 157, 0.15);
+  border-radius: 16px;
+  background: rgba(0, 255, 157, 0.03);
+  padding: 20px;
+  box-shadow: 0 0 30px rgba(0, 255, 157, 0.05);
+}
+
+.player-listings-title {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: var(--accent-green);
+  letter-spacing: 0.5px;
+}
+
+.player-listings-count {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.85rem;
+}
+
+#playerListingsGrid {
+  margin-top: 20px;
+}
+
+/* === LISTING CARDS === */
+.market-card.listed {
+  border: 2px solid rgba(0, 255, 157, 0.25) !important;
+}
+
+.market-card.listed:hover {
+  border-color: rgba(0, 255, 157, 0.45) !important;
+}
+
+/* Keep rarity backgrounds for listed cards */
+.market-card.listed.common {
+  background: linear-gradient(180deg, rgba(240, 240, 245, 0.12), rgba(180, 180, 190, 0.4)) !important;
+}
+
+.market-card.listed.uncommon {
+  background: linear-gradient(180deg, rgba(0, 255, 157, 0.15), rgba(0, 120, 60, 0.5)) !important;
+}
+
+.market-card.listed.rare {
+  background: linear-gradient(180deg, rgba(58, 160, 255, 0.15), rgba(0, 70, 150, 0.6)) !important;
+}
+
+.market-card.listed.epic {
+  background: linear-gradient(180deg, rgba(199, 138, 255, 0.2), rgba(80, 30, 130, 0.65)) !important;
+}
+
+.market-card.listed.legendary {
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.25), rgba(100, 80, 0, 0.7)) !important;
+}
+
+.owner-badge {
+  text-align: center;
+  font-size: 0.75rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 10px;
+}
+
+.owner-badge.self {
+  background: rgba(0, 255, 157, 0.15);
+  color: #00ff9d;
+}
+
+/* === MARKETPLACE MODE TOGGLER === */
+.market-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 30px;
+  background: rgba(20, 20, 30, 0.6);
+  border-radius: 15px;
+  padding: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.toggle-btn {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  border: none;
+  border-radius: 10px;
+  padding: 12px 24px;
+  font-weight: 700;
+  font-family: 'Orbitron', sans-serif;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  flex: 1;
+  font-size: 0.9rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.toggle-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.toggle-btn.active {
+  background: linear-gradient(135deg, #00ff9d, #00c474);
+  color: #000;
+  box-shadow: 0 4px 20px rgba(0, 255, 157, 0.4);
+  transform: translateY(-1px);
+}
+
+/* === MARKET SECTIONS === */
+.market-section {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== PLAYER MARKETPLACE SECTION ===== */
+#playerMarketSection {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+#playerListingsGrid {
+  margin-top: 20px;
+}
+
+/* Player listing cards - more compact */
+#playerListingsGrid .market-card {
+  height: auto;
+  min-height: 420px;
+}
+
+#playerListingsGrid .market-card .art {
+  height: 160px;
+}
+
+/* Owner badge styling */
+.owner-badge {
+  text-align: center;
+  font-size: 0.75rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.owner-badge.self {
+  background: rgba(0, 255, 157, 0.15);
+  color: #00ff9d;
+  border: 1px solid rgba(0, 255, 157, 0.3);
+}
+
+/* Listed card special styling */
+.market-card.listed {
+  border: 2px solid rgba(0, 255, 157, 0.25) !important;
+}
+
+.market-card.listed:hover {
+  border-color: rgba(0, 255, 157, 0.45) !important;
+}
+
+/* Keep rarity backgrounds for listed cards */
+.market-card.listed.common {
+  background: linear-gradient(180deg, rgba(240, 240, 245, 0.12), rgba(180, 180, 190, 0.4)) !important;
+}
+
+.market-card.listed.uncommon {
+  background: linear-gradient(180deg, rgba(0, 255, 157, 0.15), rgba(0, 120, 60, 0.5)) !important;
+}
+
+.market-card.listed.rare {
+  background: linear-gradient(180deg, rgba(58, 160, 255, 0.15), rgba(0, 70, 150, 0.6)) !important;
+}
+
+.market-card.listed.epic {
+  background: linear-gradient(180deg, rgba(199, 138, 255, 0.2), rgba(80, 30, 130, 0.65)) !important;
+}
+
+.market-card.listed.legendary {
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.25), rgba(100, 80, 0, 0.7)) !important;
+}
+
+/* Loader for player section */
+#playerListingsLoader {
+  display: none;
+  padding: 40px;
+}
+
+/* Ensure sections don't overlap */
+.market-section {
+  min-height: 60vh;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
   .market-grid {
@@ -549,6 +751,15 @@ main.container-fluid {
   .stat-value {
     font-size: 1.5rem;
   }
+  
+  .market-toggle {
+    max-width: 100%;
+  }
+  
+  .toggle-btn {
+    font-size: 0.8rem;
+    padding: 10px 16px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -567,5 +778,10 @@ main.container-fluid {
 
   .stat-value {
     font-size: 1.6rem;
+  }
+  
+  .toggle-btn {
+    font-size: 0.75rem;
+    padding: 8px 12px;
   }
 }

@@ -1,36 +1,10 @@
-
-
 window.CONTRACTS = {
   PKCN_ADDRESS: "0x8D38B8F5C1b7ed7f13BF5c46be31272ffD2AE6Ce",
   MARKETPLACE_ADDRESS: "0xf846D560F06a2D32fc550c8b5Ce593729B0a055D",
   POKEMON_NFT_ADDRESS: "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B"
 };
 
-// Add these functions to your POKEMON_NFT ABI in config.js
-
-const POKEMON_NFT_ABI = [
-  // ... your existing functions ...
-  
-  // ERC721 Approval functions (REQUIRED)
-  "function approve(address to, uint256 tokenId) external",
-  "function setApprovalForAll(address operator, bool approved) external",
-  "function isApprovedForAll(address owner, address operator) external view returns (bool)",
-  "function getApproved(uint256 tokenId) external view returns (address)",
-  
-  // Other required functions
-  "function ownerOf(uint256 tokenId) external view returns (address)",
-  "function tokenURI(uint256 tokenId) external view returns (string)",
-  "function balanceOf(address owner) external view returns (uint256)",
-  "function transferFrom(address from, address to, uint256 tokenId) external",
-  "function safeTransferFrom(address from, address to, uint256 tokenId) external",
-  
-  // Events
-  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
-  "event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)",
-  "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)"
-];
-
-// Example of a complete POKEMON_NFT ABI:
+// Complete ABI with ALL event name variants
 window.ABIS = {
   POKEMON_NFT: [
     "function mint(address to, string memory name, string memory rarity, string memory imageURI) public returns (uint256)",
@@ -39,7 +13,7 @@ window.ABIS = {
     "function balanceOf(address owner) public view returns (uint256)",
     "function remainingSupply(string memory rarity) public view returns (uint256)",
     
-    // CRITICAL: These approval functions MUST be included
+    // CRITICAL: Approval functions
     "function approve(address to, uint256 tokenId) public",
     "function setApprovalForAll(address operator, bool approved) public",
     "function isApprovedForAll(address owner, address operator) public view returns (bool)",
@@ -48,6 +22,7 @@ window.ABIS = {
     "function transferFrom(address from, address to, uint256 tokenId) public",
     "function safeTransferFrom(address from, address to, uint256 tokenId) public",
     
+    // Events (with all possible name variants)
     "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
     "event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)",
     "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)",
@@ -60,10 +35,15 @@ window.ABIS = {
     "function buyListedPokemon(uint256 listingId) public",
     "function delistPokemon(uint256 listingId) public",
     
-    "event PokemonPurchased(address indexed buyer, uint256 indexed tokenId, uint256 price)",
-    "event PokemonListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
-    "event PokemonBought(uint256 indexed listingId, address indexed buyer)",
-    "event PokemonDelisted(uint256 indexed listingId)"
+    // Events - BOTH name variations (PokemonListed & PokeListed)
+     "event PokemonListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
+    "event PokeListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
+    
+     "event PokemonBought(uint256 indexed listingId, address indexed buyer)",
+    "event PokeBought(uint256 indexed listingId, address indexed buyer)",
+
+    "event PokemonDelisted(uint256 indexed listingId)",
+    "event PokeDelisted(uint256 indexed listingId)"
   ],
   
   ERC20_MIN: [

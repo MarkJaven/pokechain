@@ -27,7 +27,7 @@
         <li class="nav-item"><a class="nav-link glow-hover" href="poketarget.html">Catch Pokemon</a></li>
 
         <li class="nav-item">
-          <div id="pctBalance" class="small-muted px-2">—</div>
+          <div id="pctBalance" class="small-muted px-2 text-light">—</div>
         </li>
         <li class="nav-item">
           <button id="walletDisplay" class="btn btn-sm btn-outline-light">Connect</button>
@@ -110,7 +110,7 @@
           console.error(err);
           loadingSpinner.style.display = 'none';
           connectMetaMaskButton.style.display = 'block';
-          alert(err.message || 'Failed to connect wallet');
+          alert(err.message || 'Failed to connect wallet');git 
         }
       });
 

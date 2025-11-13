@@ -1,10 +1,53 @@
-/* marketplace.js - updated with modal system and player listings */
+/* marketplace.js - final fixed version with 0 decimal support */
 
 document.addEventListener('DOMContentLoaded', () => {
   'use strict';
 
-  const marketGrid = document.getElementById('marketGrid');
+  // ===== Global Token Decimals (cached) =====
+  let TOKEN_DECIMALS = 18; // Default fallback
+
+  // ===== Helper Functions =====
+  function ipfsToHttp(uri) {
+    if (!uri) return '';
+    return uri.startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + uri.slice(7) : uri;
+  }
+
+  function shortAddress(addr) {
+    try { return addr.slice(0, 6) + '...' + addr.slice(-4); } catch { return addr; }
+  }
+
+  function formatPrice(priceRaw) {
+    try {
+      const bn = BigInt(priceRaw);
+      // Use cached decimals instead of hardcoded 18
+      return ethers.formatUnits(bn, TOKEN_DECIMALS) + ' PKCN';
+    } catch {
+      return String(priceRaw) + ' PKCN';
+    }
+  }
+
+  async function parseTokenURI(uri) {
+    try {
+      if (!uri) return null;
+      if (uri.startsWith('data:application/json;base64,')) {
+        const b64 = uri.split(',')[1];
+        const txt = atob(b64);
+        return JSON.parse(txt);
+      }
+      const res = await fetch(uri);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      console.warn('parseTokenURI failed', e);
+      return null;
+    }
+  }
+
+  // ===== Main Variables =====
+  const marketGrid = document.getElementById('officialMarketGrid');
+  const playerListingsGrid = document.getElementById('playerListingsGrid');
   const loader = document.getElementById('loader');
+  const playerListingsLoader = document.getElementById('playerListingsLoader');
   const fetchMoreBtn = document.getElementById('fetchMoreBtn');
   const searchInput = document.getElementById('searchInput');
   const typeFilter = document.getElementById('typeFilter');
@@ -14,8 +57,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const PAGE_SIZE = 24;
   let offset = 0;
   let allLoaded = false;
+  let playerListingsLoaded = false;
 
-  // ---- Pricing / Rarity helpers (deterministic) ----
+  // ===== Pricing & Rarity Helpers =====
   function computeRarity(baseExp) {
     if (baseExp >= 200) return 'Legendary';
     if (baseExp >= 150) return 'Epic';
@@ -55,6 +99,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function loadTokenDecimals() {
+    try {
+      const provider = await window.wallet.getProvider();
+      const token = new ethers.Contract(window.CONTRACTS.PKCN_ADDRESS, window.ABIS.ERC20_MIN, provider);
+      const decimalsBN = await token.decimals();
+      TOKEN_DECIMALS = Number(decimalsBN.toString());
+      console.log(`✅ Token decimals loaded: ${TOKEN_DECIMALS}`);
+    } catch (e) {
+      console.warn('Failed to fetch token decimals, defaulting to 18');
+      TOKEN_DECIMALS = 18;
+    }
+  }
+
   async function loadPage() {
     if (allLoaded) return;
     if (loader) loader.style.display = 'flex';
@@ -71,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const details = await Promise.all(results.map(it => fetch(it.url).then(res => res.json())));
       details.forEach(d => pokeCache.set(d.id, d));
       offset += PAGE_SIZE;
-      renderGrid();
+      renderOfficialGrid();
     } catch (e) {
       console.error('loadPage error', e);
       window.txModal?.error('Load Failed', 'Failed to load Pokémon. Please try again.');
@@ -80,24 +137,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function renderGrid() {
+  function renderOfficialGrid() {
     if (!marketGrid) return;
-    marketGrid.innerHTML = '';
-
-    // First render player on-chain listings (if any)
-    renderPlayerListings().catch(e => console.warn('renderPlayerListings', e));
-
+    
     const q = (searchInput?.value || '').trim().toLowerCase();
     const type = (typeFilter?.value || '');
     const sortBy = (sortSelect?.value || 'id');
 
     let items = Array.from(pokeCache.values());
-    if (q) {
-      items = items.filter(p => (p.name && p.name.includes(q)) || String(p.id) === q);
-    }
-    if (type) {
-      items = items.filter(p => p.types.some(t => t.type.name === type));
-    }
+    if (q) items = items.filter(p => (p.name && p.name.includes(q)) || String(p.id) === q);
+    if (type) items = items.filter(p => p.types.some(t => t.type.name === type));
 
     items = items.map(p => ({
       ...p,
@@ -112,10 +161,12 @@ document.addEventListener('DOMContentLoaded', () => {
       return 0;
     });
 
-    items.forEach(p => marketGrid.appendChild(makeCard(p)));
+    // Clear and render official cards
+    marketGrid.innerHTML = '';
+    items.forEach(p => marketGrid.appendChild(makeOfficialCard(p)));
   }
 
-  function makeCard(p) {
+  function makeOfficialCard(p) {
     const card = document.createElement('div');
     const rarityClass = rarityClassLabel(p.rarity);
     card.className = `market-card ${rarityClass}`;
@@ -177,11 +228,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     card.appendChild(inner);
 
-    fetchRemainingSupplyForRarity(p.rarity).then(n => {
-      supplySpan.textContent = (typeof n === 'number') ? `${n} left` : '—';
-    }).catch(e => {
-      supplySpan.textContent = '—';
-    });
+    fetchRemainingSupplyForRarity(p.rarity)
+      .then(n => { supplySpan.textContent = (typeof n === 'number') ? `${n} left` : '—'; })
+      .catch(() => { supplySpan.textContent = '—'; });
 
     return card;
   }
@@ -209,6 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const signer = await window.wallet.getSigner();
     const token = new ethers.Contract(tokenAddress, window.ABIS.ERC20_MIN, signer);
 
+    // Use cached decimals for raw conversion
     if (typeof humanAmountOrRaw === 'bigint' || (typeof humanAmountOrRaw === 'string' && /^[0-9]+$/.test(humanAmountOrRaw))) {
       const rawAmount = BigInt(humanAmountOrRaw.toString());
       const owner = await window.wallet.getAccount();
@@ -220,11 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const human = humanAmountOrRaw;
-    const provider = await window.wallet.getProvider();
-    const tokenProv = new ethers.Contract(tokenAddress, window.ABIS.ERC20_MIN, provider);
-    const decimalsBN = await tokenProv.decimals().catch(() => 18);
-    const decimals = Number(decimalsBN.toString ? decimalsBN.toString() : decimalsBN);
-    const raw = ethers.parseUnits(String(human), decimals);
+    const raw = ethers.parseUnits(String(human), TOKEN_DECIMALS); // Use cached decimals
     const owner = await window.wallet.getAccount();
     const allowance = BigInt((await token.allowance(owner, spender)).toString());
     if (allowance >= BigInt(raw.toString())) return true;
@@ -236,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function buyPokemonOnChain(pokemon) {
     try {
       assertConfig();
-      
+
       if (!window.wallet.getAccount()) {
         const shouldConnect = await window.txModal.confirm({
           title: 'Connect Wallet',
@@ -249,33 +295,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const pkcnAddr = window.CONTRACTS.PKCN_ADDRESS;
       const marketplaceAddr = window.CONTRACTS.MARKETPLACE_ADDRESS;
-      
-      const provider = await window.wallet.getProvider();
-      const tokenProv = new ethers.Contract(pkcnAddr, window.ABIS.ERC20_MIN, provider);
-      const decimalsBN = await tokenProv.decimals().catch(() => 18);
-      const decimals = Number(decimalsBN.toString ? decimalsBN.toString() : decimalsBN);
 
-      let priceUnits;
-      if (decimals === 0) {
-        priceUnits = BigInt(Math.floor(Number(pokemon.price)));
-      } else {
-        priceUnits = ethers.parseUnits(String(pokemon.price), decimals);
-      }
+      // Use cached decimals for price conversion
+      const rawPrice = ethers.parseUnits(String(pokemon.price), TOKEN_DECIMALS);
 
-      const humanPrice = (decimals === 0) ? String(priceUnits) : ethers.formatUnits(priceUnits, decimals);
-      
       const confirmed = await window.txModal.confirm({
         title: 'Buy Pokemon',
         message: `Confirm purchase of this Pokemon?`,
         details: [
           { label: 'Pokemon', value: `#${pokemon.id} ${pokemon.name}` },
           { label: 'Rarity', value: pokemon.rarity },
-          { label: 'Price', value: `${humanPrice} PKCN`, highlight: true }
+          { label: 'Price', value: `${pokemon.price} PKCN`, highlight: true }
         ],
         confirmText: 'Buy Now',
         cancelText: 'Cancel'
       });
-      
+
       if (!confirmed) return;
 
       window.txModal.transaction({
@@ -284,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
         subtitle: 'Please confirm the transactions in your wallet.'
       });
 
-      await ensureTokenApproval(pkcnAddr, marketplaceAddr, priceUnits);
+      await ensureTokenApproval(pkcnAddr, marketplaceAddr, rawPrice);
 
       const signer = await window.wallet.getSigner();
       const marketplace = new ethers.Contract(marketplaceAddr, window.ABIS.MARKETPLACE, signer);
@@ -292,9 +327,9 @@ document.addEventListener('DOMContentLoaded', () => {
         pokemon.name,
         computeRarity(pokemon.base_experience || 0),
         pokemon.sprites?.other?.['official-artwork']?.front_default || pokemon.sprites?.front_default || '',
-        priceUnits
+        rawPrice
       );
-      
+
       const receipt = await tx.wait();
 
       let mintedTokenId = null;
@@ -307,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
               mintedTokenId = parsed.args[0].toString();
               break;
             }
-          } catch (e) { }
+          } catch {}
         }
       } catch (e) {
         console.warn('Failed to parse NFT logs for tokenId', e);
@@ -323,19 +358,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 mintedTokenId = parsed.args[1].toString();
                 break;
               }
-            } catch (e) { }
+            } catch {}
           }
-        } catch (e) { console.warn('parse marketplace logs failed', e); }
+        } catch (e) {
+          console.warn('parse marketplace logs failed', e);
+        }
       }
 
       window.txModal.success(
         'Purchase Successful!',
-        `You have successfully purchased ${pokemon.name}! Token ID: ${mintedTokenId || '(unknown)'}. Check your Collection to see it.`,
+        `You have successfully purchased ${pokemon.name}! Token ID: ${mintedTokenId || '(unknown)'}. Check your Collection.`,
         () => {
           window.wallet.updateBalanceDisplayIfNeeded();
         }
       );
-
     } catch (err) {
       console.error('Buy (on-chain) failed', err);
       let message = 'Transaction failed';
@@ -346,105 +382,185 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ----------------- Player Listings (on-chain) -----------------
-  async function fetchActiveListingsFromChain() {
+  // ===== Player Listings Functions =====
+  window.fetchActiveListingsFromChain = async function () {
     try {
       assertConfig();
       await window.wallet.ensureProvider();
       const provider = await window.wallet.getProvider();
       const marketplaceAddr = window.CONTRACTS.MARKETPLACE_ADDRESS;
-      if (!marketplaceAddr) return [];
       
+      if (!marketplaceAddr) {
+        console.error("❌ MARKETPLACE_ADDRESS not configured");
+        return [];
+      }
+
+      const latest = await provider.getBlockNumber();
+      const fromBlock = Math.max(0, latest - 200000);
+      
+      console.log(`🔍 Fetching marketplace events from blocks ${fromBlock} → ${latest}`);
+
       const mpIface = new ethers.Interface(window.ABIS.MARKETPLACE);
-      const logs = await provider.getLogs({ address: marketplaceAddr, fromBlock: 0, toBlock: 'latest' });
+      
+      // Get all logs from the marketplace contract
+      const logs = await provider.getLogs({
+        address: marketplaceAddr,
+        fromBlock: fromBlock,
+        toBlock: 'latest'
+      });
+      
+      console.log(`📝 Found ${logs.length} total logs from marketplace`);
+
+      // CRITICAL: Sort chronologically to process events in order
+      logs.sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex);
+      
       const listingsMap = new Map();
       
       for (const log of logs) {
         try {
           const parsed = mpIface.parseLog(log);
-          const name = parsed.name;
-          if (name === 'PokemonListed' || name === 'PokeListed') {
-            const args = parsed.args;
-            const listingId = args.listingId ?? args[0];
-            const tokenId = args.tokenId ?? args[1];
-            const seller = args.seller ?? args[2];
-            const price = args.price ?? args[3];
-            listingsMap.set(listingId.toString(), { 
-              listingId: listingId.toString(), 
-              tokenId: tokenId.toString(), 
-              seller: seller, 
-              price: price.toString(), 
-              active: true 
+          const eventName = parsed.name;
+          const args = parsed.args;
+          
+          console.log(`📋 Processing event: ${eventName} at block ${log.blockNumber}`);
+
+          // Handle BOTH event name variants
+          if (eventName === 'PokemonListed' || eventName === 'PokeListed') {
+            const listingId = args.listingId?.toString() || args[0]?.toString();
+            const tokenId = args.tokenId?.toString() || args[1]?.toString();
+            const seller = args.seller || args[2];
+            const price = args.price || args[3];
+            
+            listingsMap.set(listingId, {
+              listingId,
+              tokenId,
+              seller,
+              price,
+              active: true,
+              eventName // Track which variant was used
             });
-          } else if (name === 'ListingBought' || name === 'PokemonBought') {
-            const args = parsed.args;
-            const listingId = args.listingId ?? args[0];
-            listingsMap.delete(listingId.toString());
-          } else if (name === 'PokemonDelisted' || name === 'PokeDelisted') {
-            const args = parsed.args;
-            const listingId = args.listingId ?? args[0];
-            listingsMap.delete(listingId.toString());
+            console.log(`✅ ADDED: Listing #${listingId} for token #${tokenId} by ${seller} (${eventName})`);
           }
-        } catch (e) { }
+          
+          // Handle delisting events (both variants)
+          else if (eventName === 'PokemonDelisted' || eventName === 'PokeDelisted') {
+            const listingId = args.listingId?.toString() || args[0]?.toString();
+            if (listingsMap.has(listingId)) {
+              listingsMap.delete(listingId);
+              console.log(`❌ REMOVED: Delisted listing #${listingId}`);
+            }
+          }
+          
+          // Handle purchase events (both variants)
+          else if (eventName === 'PokemonBought' || eventName === 'PokeBought') {
+            const listingId = args.listingId?.toString() || args[0]?.toString();
+            if (listingsMap.has(listingId)) {
+              listingsMap.delete(listingId);
+              console.log(`❌ REMOVED: Sold listing #${listingId}`);
+            }
+          }
+          
+        } catch (parseError) {
+          // Log non-matching logs for debugging
+          console.debug("⚠️ Log doesn't match Marketplace ABI:", log.topics[0]);
+        }
       }
-      return Array.from(listingsMap.values());
+
+      const finalListings = Array.from(listingsMap.values());
+      console.log(`✅ FINAL: ${finalListings.length} active player listings`);
+      return finalListings;
+      
     } catch (e) {
-      console.warn('fetchActiveListingsFromChain failed', e);
+      console.error("❌ fetchActiveListingsFromChain failed:", e);
       return [];
     }
-  }
+  };
 
   async function renderPlayerListings() {
     try {
-      const listings = await fetchActiveListingsFromChain();
-      if (!listings || listings.length === 0) return;
-
-      const wrapper = document.createElement('div');
-      wrapper.className = 'player-listings';
-      wrapper.style.marginBottom = '40px';
+      if (!playerListingsGrid) return;
       
-      const header = document.createElement('div');
-      header.style.display = 'flex';
-      header.style.justifyContent = 'space-between';
-      header.style.alignItems = 'center';
-      header.style.margin = '12px 0 20px 0';
+      // Show loader
+      if (playerListingsLoader) playerListingsLoader.style.display = 'flex';
       
-      const h = document.createElement('h3');
-      h.textContent = '🔥 Player Listings';
-      h.style.margin = 0;
-      h.style.fontSize = '1.5rem';
-      h.style.color = '#00ff9d';
-      header.appendChild(h);
+      const listings = await window.fetchActiveListingsFromChain();
       
-      const count = document.createElement('span');
-      count.textContent = `${listings.length} available`;
-      count.style.color = 'rgba(255,255,255,0.6)';
-      count.style.fontSize = '0.9rem';
-      header.appendChild(count);
-      
-      wrapper.appendChild(header);
-
-      const grid = document.createElement('div');
-      grid.style.display = 'grid';
-      grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
-      grid.style.gap = '16px';
-      grid.style.marginBottom = '18px';
-
-      const toShow = listings.slice(0, 24);
-      for (const L of toShow) {
-        const c = await makeListingCard(L);
-        grid.appendChild(c);
+      // Update count
+      const countEl = document.getElementById('playerListingCount');
+      if (countEl) {
+        countEl.textContent = listings.length > 0 ? `${listings.length} available` : 'No listings yet';
       }
-      wrapper.appendChild(grid);
-      marketGrid.appendChild(wrapper);
+
+      // Clear grid
+      playerListingsGrid.innerHTML = '';
+
+      if (!listings || listings.length === 0) {
+        console.log('⚠️ No active player listings found');
+        if (playerListingsLoader) playerListingsLoader.style.display = 'none';
+        return;
+      }
+
+      // Render cards
+      for (const L of listings) {
+        const card = await makeListingCard(L);
+        playerListingsGrid.appendChild(card);
+      }
+      
+      if (playerListingsLoader) playerListingsLoader.style.display = 'none';
     } catch (e) {
-      console.warn('renderPlayerListings failed', e);
+      console.error('❌ renderPlayerListings failed:', e);
+      if (playerListingsLoader) playerListingsLoader.style.display = 'none';
     }
   }
 
   async function makeListingCard(listing) {
+    let nameText = `Token #${listing.tokenId}`;
+    let rarity = 'Common';
+    let pokemonId = listing.tokenId;
+    let imageUrl = 'images/pokeball.png';
+
+    try {
+      assertConfig();
+      await window.wallet.ensureProvider();
+      const provider = await window.wallet.getProvider();
+      const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT_ADDRESS, window.ABIS.POKEMON_NFT, provider);
+      
+      // Get tokenURI
+      const uri = await nft.tokenURI(listing.tokenId);
+      console.log(`🖼️ Token #${listing.tokenId} URI:`, uri);
+      
+      const meta = await parseTokenURI(uri);
+      if (meta) {
+        if (meta.image) imageUrl = ipfsToHttp(meta.image);
+        if (meta.name) nameText = meta.name.charAt(0).toUpperCase() + meta.name.slice(1);
+        
+        // Get Pokemon ID from PokeAPI
+        try {
+          const pokeRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${meta.name.toLowerCase()}`);
+          if (pokeRes.ok) {
+            const pokeData = await pokeRes.json();
+            pokemonId = pokeData.id;
+          }
+        } catch (e) {
+          console.warn(`⚠️ Couldn't fetch PokeAPI data for ${meta.name}`);
+        }
+        
+        // Extract rarity from attributes
+        if (meta.attributes && Array.isArray(meta.attributes)) {
+          const rarityAttr = meta.attributes.find(a => 
+            a.trait_type?.toLowerCase() === 'rarity'
+          );
+          if (rarityAttr?.value) rarity = rarityAttr.value;
+        }
+      }
+    } catch (e) {
+      console.error(`❌ Failed to load metadata for token #${listing.tokenId}:`, e);
+    }
+
+    // Apply rarity class to card
+    const rarityClass = rarityClassLabel(rarity);
     const card = document.createElement('div');
-    card.className = 'market-card listed';
+    card.className = `market-card listed ${rarityClass}`;
 
     const inner = document.createElement('div');
     inner.className = 'card-inner';
@@ -452,41 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const art = document.createElement('div');
     art.className = 'art';
     const img = document.createElement('img');
-    let nameText = `#${listing.tokenId}`;
-    let rarity = 'Common';
-    let pokemonId = listing.tokenId;
-    
-    try {
-      assertConfig();
-      await window.wallet.ensureProvider();
-      const provider = await window.wallet.getProvider();
-      const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT_ADDRESS, window.ABIS.POKEMON_NFT, provider);
-      const uri = await nft.tokenURI(listing.tokenId);
-      const meta = await parseTokenURI(uri);
-      
-      if (meta) {
-        if (meta.image) img.src = meta.image;
-        if (meta.name) {
-          nameText = meta.name.charAt(0).toUpperCase() + meta.name.slice(1);
-          // Fetch from PokeAPI to get proper ID
-          try {
-            const pokeRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${meta.name.toLowerCase()}`);
-            if (pokeRes.ok) {
-              const pokeData = await pokeRes.json();
-              pokemonId = pokeData.id;
-            }
-          } catch (e) { }
-        }
-        if (meta.attributes && meta.attributes.length > 0) {
-          const rAttr = meta.attributes.find(a => a.trait_type === 'Rarity' || a.trait_type === 'rarity');
-          if (rAttr) rarity = rAttr.value || rarity;
-        }
-      }
-    } catch (e) {
-      img.src = 'images/pokeball.png';
-      console.warn('makeListingCard metadata fetch failed', e);
-    }
-    
+    img.src = imageUrl;
     img.alt = nameText;
     art.appendChild(img);
 
@@ -501,10 +583,9 @@ document.addEventListener('DOMContentLoaded', () => {
     badge.textContent = rarity;
     typesWrap.appendChild(badge);
 
-    // Owner info
     const currentUser = window.wallet?.getAccount?.()?.toLowerCase();
     const isOwner = currentUser === listing.seller.toLowerCase();
-    
+
     const ownerDiv = document.createElement('div');
     ownerDiv.className = `owner-badge ${isOwner ? 'self' : ''}`;
     ownerDiv.textContent = isOwner ? '👤 Your Listing' : `👤 Seller: ${shortAddress(listing.seller)}`;
@@ -522,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const actions = document.createElement('div');
     actions.className = 'actions';
-    
+
     if (isOwner) {
       const delistBtn = document.createElement('button');
       delistBtn.className = 'btn-secondary-action';
@@ -545,41 +626,14 @@ document.addEventListener('DOMContentLoaded', () => {
     inner.appendChild(bottom);
     inner.appendChild(actions);
     card.appendChild(inner);
+    
     return card;
-  }
-
-  function formatPrice(priceRaw) {
-    try {
-      // Try to format as PKCN with decimals
-      const bn = BigInt(priceRaw);
-      return ethers.formatUnits(bn, 18) + ' PKCN';
-    } catch (e) { 
-      return String(priceRaw) + ' PKCN';
-    }
-  }
-
-  function shortAddress(addr) {
-    try { return addr.slice(0, 6) + '...' + addr.slice(-4); } catch (e) { return addr; }
-  }
-
-  async function parseTokenURI(uri) {
-    try {
-      if (!uri) return null;
-      if (uri.startsWith('data:application/json;base64,')) {
-        const b64 = uri.split(',')[1];
-        const txt = atob(b64);
-        return JSON.parse(txt);
-      }
-      const res = await fetch(uri);
-      if (!res.ok) return null;
-      return await res.json();
-    } catch (e) { console.warn('parseTokenURI failed', e); return null; }
   }
 
   async function buyListedOnChain(listingId, priceRaw, pokemonName, pokemonId, seller) {
     try {
       assertConfig();
-      
+
       if (!window.wallet.getAccount()) {
         const shouldConnect = await window.txModal.confirm({
           title: 'Connect Wallet',
@@ -591,8 +645,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const priceBig = BigInt(priceRaw.toString());
-      const humanPrice = ethers.formatUnits(priceBig, 18);
-      
+      // CORRECTED: Use TOKEN_DECIMALS instead of hardcoded 18
+      const humanPrice = ethers.formatUnits(priceBig, TOKEN_DECIMALS);
+
       const confirmed = await window.txModal.confirm({
         title: 'Buy Listed Pokemon',
         message: `Purchase this Pokemon from another player?`,
@@ -604,7 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
         confirmText: 'Buy Now',
         cancelText: 'Cancel'
       });
-      
+
       if (!confirmed) return;
 
       window.txModal.transaction({
@@ -622,16 +677,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const marketplace = new ethers.Contract(marketplaceAddr, window.ABIS.MARKETPLACE, signer);
       const tx = await marketplace.buyListedPokemon(BigInt(listingId));
       await tx.wait();
-      
+
       window.txModal.success(
         'Purchase Successful!',
         `You have successfully purchased ${pokemonName} from ${shortAddress(seller)}! Check your Collection.`,
         () => {
           window.wallet.updateBalanceDisplayIfNeeded();
-          renderGrid();
+          renderPlayerListings(); // Refresh player listings
         }
       );
-      
     } catch (e) {
       console.error('buyListedOnChain failed', e);
       let message = 'Failed to purchase listing';
@@ -655,7 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelText: 'Keep Listed',
         dangerous: true
       });
-      
+
       if (!confirmed) return;
 
       window.txModal.transaction({
@@ -668,13 +722,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const marketplace = new ethers.Contract(window.CONTRACTS.MARKETPLACE_ADDRESS, window.ABIS.MARKETPLACE, signer);
       const tx = await marketplace.delistPokemon(BigInt(listingId));
       await tx.wait();
-      
+
       window.txModal.success(
         'Listing Canceled',
         `Your ${pokemonName} has been removed from the marketplace.`,
-        () => renderGrid()
+        () => renderPlayerListings() // Refresh player listings
       );
-      
     } catch (e) {
       console.error('delistPokemon failed', e);
       let message = 'Failed to cancel listing';
@@ -685,16 +738,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function attachHandlers() {
-    fetchMoreBtn?.addEventListener('click', loadPage);
-    searchInput?.addEventListener('input', () => renderGrid());
-    typeFilter?.addEventListener('change', () => renderGrid());
-    sortSelect?.addEventListener('change', () => renderGrid());
+  // ===== Toggle Logic =====
+  function setMarketplaceMode(mode) {
+    const officialSection = document.getElementById('officialMarketSection');
+    const playerSection = document.getElementById('playerMarketSection');
+    const toggleOfficial = document.getElementById('toggleOfficial');
+    const togglePlayer = document.getElementById('togglePlayer');
+
+    if (mode === 'official') {
+      toggleOfficial.classList.add('active');
+      togglePlayer.classList.remove('active');
+      officialSection.style.display = 'block';
+      playerSection.style.display = 'none';
+    } else {
+      togglePlayer.classList.add('active');
+      toggleOfficial.classList.remove('active');
+      officialSection.style.display = 'none';
+      playerSection.style.display = 'block';
+      
+      // Load player listings when switching to player mode
+      if (!playerListingsLoaded) {
+        renderPlayerListings();
+        playerListingsLoaded = true;
+      }
+    }
   }
 
+  function attachHandlers() {
+    fetchMoreBtn?.addEventListener('click', loadPage);
+    searchInput?.addEventListener('input', () => renderOfficialGrid());
+    typeFilter?.addEventListener('change', () => renderOfficialGrid());
+    sortSelect?.addEventListener('change', () => renderOfficialGrid());
+    
+    // Toggle buttons
+    document.getElementById('toggleOfficial')?.addEventListener('click', () => setMarketplaceMode('official'));
+    document.getElementById('togglePlayer')?.addEventListener('click', () => setMarketplaceMode('player'));
+  }
+
+  // ===== Initialization =====
   (async function init() {
     await loadTypes();
+    await loadTokenDecimals(); // Load decimals first
     await loadPage();
     attachHandlers();
+    
+    // Load player listings in background
+    setTimeout(() => {
+      renderPlayerListings();
+      playerListingsLoaded = true;
+    }, 1000);
   })();
 });

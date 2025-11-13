@@ -4,12 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>PokéChain — Marketplace</title>
+
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="collection-marketplace.css" />
   <link rel="stylesheet" href="transaction-modal.css" />
 </head>
+
 <body>
+  <!-- === NAVBAR === -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-transparent px-4 py-3">
     <a class="navbar-brand fs-3 fw-bold text-warning" href="index.html">Poké<span class="text-success">Chain</span></a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -28,6 +31,7 @@
   </nav>
 
   <main class="container-fluid px-4">
+    <!-- === PAGE HEADER === -->
     <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-3">
       <div>
         <h1 class="h2 mb-0">Marketplace</h1>
@@ -48,43 +52,35 @@
       </div>
     </div>
 
-    <div id="marketGrid" class="market-grid"></div>
-
-    <div id="loader" class="loader" style="display:none;">
-      <div class="spinner-border text-success" role="status"></div>
+    <!-- === MARKETPLACE MODE TOGGLER === -->
+    <div class="market-toggle mb-4">
+      <button id="toggleOfficial" class="toggle-btn active">Official Marketplace</button>
+      <button id="togglePlayer" class="toggle-btn">Player Marketplace</button>
     </div>
+
+    <!-- === OFFICIAL MARKETPLACE SECTION === -->
+    <section id="officialMarketSection" class="market-section">
+      <div id="officialMarketGrid" class="market-grid"></div>
+      <div id="loader" class="loader" style="display:none;">
+        <div class="spinner-border text-success" role="status"></div>
+      </div>
+    </section>
+
+    <!-- === PLAYER MARKETPLACE SECTION === -->
+    <section id="playerMarketSection" class="market-section" style="display:none;">
+      <div id="playerListingsGrid" class="market-grid"></div>
+      <div id="playerListingsLoader" class="loader" style="display:none;">
+        <div class="spinner-border text-success" role="status"></div>
+      </div>
+    </section>
   </main>
 
+  <!-- === SCRIPTS === -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
   <script src="./config.js"></script>
   <script src="./wallet.js"></script>
   <script src="transaction-modal.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="./marketplace.js"></script>
-  
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      const walletBtn = document.getElementById('walletDisplay');
-      walletBtn?.addEventListener('click', async () => {
-        const acc = window.wallet.getAccount();
-        if (!acc) {
-          try {
-            await window.wallet.connectWallet();
-          } catch (e) {
-            console.error(e);
-            if (window.txModal) {
-              window.txModal.error('Connection Failed', e.message || 'Failed to connect wallet');
-            } else {
-              alert(e.message || 'Failed to connect wallet');
-            }
-          }
-        } else {
-          if (confirm('Disconnect wallet?')) {
-            window.wallet.disconnect();
-          }
-        }
-      });
-    });
-  </script>
 </body>
 </html>
