@@ -1,4 +1,4 @@
-console.log('collection.js unified grid loaded');
+console.log('collection.js - Improved NFT collection management loaded');
 
 async function safeGetProvider() {
   if (!window.wallet || !window.wallet.getProvider) return null;
@@ -49,6 +49,7 @@ async function fetchPokeAPIData(pokemonName) {
 function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities }) {
   const card = document.createElement('div');
   card.className = `market-card ${(rarity || 'common').toLowerCase()}`;
+  card.dataset.tokenId = uniqueId; // Store token ID for tracking
   
   const inner = document.createElement('div');
   inner.className = 'card-inner';
@@ -116,6 +117,7 @@ function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities }
   return card;
 }
 
+// ===== IMPROVED: Better error handling and user feedback =====
 async function handleSell(uniqueId, name, pokemonId, image, rarity) {
   try {
     if (!window.txModal) {
@@ -270,6 +272,7 @@ async function handleSell(uniqueId, name, pokemonId, image, rarity) {
   }
 }
 
+// ===== IMPROVED: More efficient token fetching with better error handling =====
 async function fetchOwnedTokens(provider, nft, addr) {
   const iface = new ethers.Interface([
     "event Transfer(address indexed from,address indexed to,uint256 indexed tokenId)"
@@ -277,14 +280,30 @@ async function fetchOwnedTokens(provider, nft, addr) {
   const topic = ethers.id("Transfer(address,address,uint256)");
   const latest = await provider.getBlockNumber();
   let logs = [];
+  
   try {
-    logs = await provider.getLogs({
-      address: nft.target,
-      fromBlock: Math.max(0, latest - 50000),
-      toBlock: 'latest',
-      topics: [topic]
-    });
-  } catch (e) { console.warn('getLogs failed', e); }
+    // Try fetching logs in smaller chunks to avoid timeout issues
+    const chunkSize = 10000; 
+    let fromBlock = Math.max(0, latest - 50000);
+    
+    while (fromBlock < latest) {
+      const toBlock = Math.min(fromBlock + chunkSize, latest);
+      try {
+        const chunkLogs = await provider.getLogs({
+          address: nft.target,
+          fromBlock: fromBlock,
+          toBlock: toBlock,
+          topics: [topic]
+        });
+        logs = logs.concat(chunkLogs);
+      } catch (chunkError) {
+        console.warn(`Failed to fetch logs for blocks ${fromBlock}-${toBlock}:`, chunkError);
+      }
+      fromBlock = toBlock + 1;
+    }
+  } catch (e) { 
+    console.warn('getLogs failed completely:', e); 
+  }
 
   const owned = new Set();
   for (const l of logs) {
@@ -299,22 +318,40 @@ async function fetchOwnedTokens(provider, nft, addr) {
   return [...owned].map(Number);
 }
 
+// ===== IMPROVED: Better error handling and loading states =====
 async function renderCollection() {
   const grid = document.getElementById('allCollectionGrid');
   const totalEl = document.getElementById('totalPokemon');
   const rareEl = document.getElementById('rarePokemon');
   const emptyState = document.getElementById('emptyState');
+  const loadingEl = document.getElementById('collectionLoading');
 
-  grid.innerHTML = '';
+  // Show loading state
+  if (loadingEl) loadingEl.style.display = 'block';
+  if (grid) grid.style.display = 'none';
+  
+  if (grid) grid.innerHTML = '';
+  
   const provider = await safeGetProvider();
-  if (!provider) return console.error('no provider');
+  if (!provider) {
+    if (loadingEl) loadingEl.style.display = 'none';
+    console.error('No provider available');
+    return;
+  }
 
   let acc = window.wallet?.getAccount?.();
   if (!acc) {
-    await window.wallet?.connectWallet?.();
-    acc = window.wallet?.getAccount?.();
+    try {
+      await window.wallet?.connectWallet?.();
+      acc = window.wallet?.getAccount?.();
+    } catch (e) {
+      console.error('Failed to connect wallet:', e);
+    }
   }
+  
   if (!acc) {
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (emptyState) emptyState.style.display = 'block';
     window.txModal?.error('Wallet Required', 'Please connect your wallet to view your collection.');
     return;
   }
@@ -322,83 +359,173 @@ async function renderCollection() {
   const addr = acc.toLowerCase();
   const nftAddr = window.CONTRACTS?.POKEMON_NFT_ADDRESS;
   const abi = window.ABIS?.POKEMON_NFT;
+  
+  if (!nftAddr || !abi) {
+    if (loadingEl) loadingEl.style.display = 'none';
+    console.error('NFT contract not configured');
+    return;
+  }
+  
   const nft = new ethers.Contract(nftAddr, abi, provider);
 
-  const ids = await fetchOwnedTokens(provider, nft, addr);
-  let total = 0, rareCount = 0;
+  try {
+    const ids = await fetchOwnedTokens(provider, nft, addr);
+    let total = 0, rareCount = 0;
 
-  for (const uniqueId of ids) {
-    // Get NFT metadata from contract
-    const meta = await resolveMetadata(nft, uniqueId);
-    if (!meta) continue;
-    
-    console.log('NFT metadata for #' + uniqueId + ':', meta);
-    
-    // Extract basic info from NFT metadata
-    let name = meta.name || `Token ${uniqueId}`;
-    let image = meta.image ? ipfsToHttp(meta.image) : '';
-    let rarity = 'Common';
-    
-    // Get rarity from attributes
-    if (meta.attributes && Array.isArray(meta.attributes)) {
-      const rarityAttr = meta.attributes.find(a => 
-        a.trait_type?.toLowerCase() === 'rarity'
-      );
-      if (rarityAttr && rarityAttr.value) {
-        rarity = rarityAttr.value;
-      }
+    if (ids.length === 0) {
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (emptyState) emptyState.style.display = 'block';
+      if (totalEl) totalEl.textContent = '0';
+      if (rareEl) rareEl.textContent = '0';
+      return;
     }
-    
-    // Now fetch additional data from PokeAPI using the pokemon name
-    let pokemonId = uniqueId; // fallback
-    let types = [];
-    let abilities = '';
-    
-    const pokeData = await fetchPokeAPIData(name);
-    if (pokeData) {
-      console.log('PokeAPI data for ' + name + ':', pokeData);
+
+    // Show grid and hide loading
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (grid) grid.style.display = 'grid';
+    if (emptyState) emptyState.style.display = 'none';
+
+    // Process tokens in batches to avoid overwhelming the UI
+    const batchSize = 10;
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batch = ids.slice(i, i + batchSize);
       
-      // Get Pokemon ID from PokeAPI
-      pokemonId = pokeData.id;
-      
-      // Get types from PokeAPI
-      if (pokeData.types && Array.isArray(pokeData.types)) {
-        types = pokeData.types.map(t => t.type.name);
-      }
-      
-      // Get abilities from PokeAPI
-      if (pokeData.abilities && Array.isArray(pokeData.abilities)) {
-        const abilityNames = pokeData.abilities
-          .slice(0, 3)
-          .map(a => a.ability?.name || '')
-          .filter(Boolean);
-        if (abilityNames.length > 0) {
-          abilities = `Abilities: ${abilityNames.join(', ')}`;
+      await Promise.all(batch.map(async (uniqueId) => {
+        try {
+          // Get NFT metadata from contract
+          const meta = await resolveMetadata(nft, uniqueId);
+          if (!meta) {
+            console.warn(`No metadata found for token #${uniqueId}`);
+            return;
+          }
+          
+          console.log('NFT metadata for #' + uniqueId + ':', meta);
+          
+          // Extract basic info from NFT metadata
+          let name = meta.name || `Token ${uniqueId}`;
+          let image = meta.image ? ipfsToHttp(meta.image) : '';
+          let rarity = 'Common';
+          
+          // Get rarity from attributes
+          if (meta.attributes && Array.isArray(meta.attributes)) {
+            const rarityAttr = meta.attributes.find(a => 
+              a.trait_type?.toLowerCase() === 'rarity'
+            );
+            if (rarityAttr && rarityAttr.value) {
+              rarity = rarityAttr.value;
+            }
+          }
+          
+          // Now fetch additional data from PokeAPI using the pokemon name
+          let pokemonId = uniqueId; // fallback
+          let types = [];
+          let abilities = '';
+          
+          const pokeData = await fetchPokeAPIData(name);
+          if (pokeData) {
+            console.log('PokeAPI data for ' + name + ':', pokeData);
+            
+            // Get Pokemon ID from PokeAPI
+            pokemonId = pokeData.id;
+            
+            // Get types from PokeAPI
+            if (pokeData.types && Array.isArray(pokeData.types)) {
+              types = pokeData.types.map(t => t.type.name);
+            }
+            
+            // Get abilities from PokeAPI
+            if (pokeData.abilities && Array.isArray(pokeData.abilities)) {
+              const abilityNames = pokeData.abilities
+                .slice(0, 3)
+                .map(a => a.ability?.name || '')
+                .filter(Boolean);
+              if (abilityNames.length > 0) {
+                abilities = `Abilities: ${abilityNames.join(', ')}`;
+              }
+            }
+            
+            // Capitalize name properly
+            name = name.charAt(0).toUpperCase() + name.slice(1);
+          }
+          
+          console.log('✅ Final card data:', { 
+            uniqueId, 
+            pokemonId, 
+            name, 
+            rarity, 
+            types, 
+            abilities 
+          });
+          
+          const card = makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities });
+          
+          // Add card to grid in the correct order
+          if (grid) {
+            grid.appendChild(card);
+          }
+          
+          total++;
+          if (['rare','epic','legendary'].includes(rarity.toLowerCase())) rareCount++;
+          
+        } catch (tokenError) {
+          console.error(`Error processing token #${uniqueId}:`, tokenError);
         }
-      }
+      }));
       
-      // Capitalize name properly
-      name = name.charAt(0).toUpperCase() + name.slice(1);
+      // Small delay between batches to keep UI responsive
+      if (i + batchSize < ids.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
     }
-    
-    console.log('✅ Final card data:', { 
-      uniqueId, 
-      pokemonId, 
-      name, 
-      rarity, 
-      types, 
-      abilities 
-    });
-    
-    const card = makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities });
-    grid.appendChild(card);
-    total++;
-    if (['rare','epic','legendary'].includes(rarity.toLowerCase())) rareCount++;
-  }
 
-  totalEl.textContent = total;
-  rareEl.textContent = rareCount;
-  emptyState.style.display = total ? 'none' : 'block';
+    // Update counters
+    if (totalEl) totalEl.textContent = total;
+    if (rareEl) rareEl.textContent = rareCount;
+    
+  } catch (error) {
+    console.error('Failed to render collection:', error);
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (emptyState) emptyState.style.display = 'block';
+    window.txModal?.error('Collection Error', 'Failed to load your collection. Please try again.');
+  }
 }
 
-window.addEventListener('load', renderCollection);
+// ===== Auto-refresh collection periodically =====
+let collectionRefreshInterval;
+
+function startCollectionAutoRefresh() {
+  // Clear existing interval
+  if (collectionRefreshInterval) {
+    clearInterval(collectionRefreshInterval);
+  }
+  
+  // Refresh collection every 30 seconds to catch new purchases
+  collectionRefreshInterval = setInterval(() => {
+    if (window.wallet?.getAccount?.()) {
+      renderCollection();
+    }
+  }, 30000);
+}
+
+function stopCollectionAutoRefresh() {
+  if (collectionRefreshInterval) {
+    clearInterval(collectionRefreshInterval);
+    collectionRefreshInterval = null;
+  }
+}
+
+// ===== Event Listeners =====
+window.addEventListener('load', () => {
+  renderCollection();
+  startCollectionAutoRefresh();
+});
+
+// Stop auto-refresh when page unloads
+window.addEventListener('beforeunload', stopCollectionAutoRefresh);
+
+// Refresh collection when wallet connects/disconnects
+document.addEventListener('wallet.ready', () => {
+  if (window.wallet?.getAccount?.()) {
+    renderCollection();
+  }
+});

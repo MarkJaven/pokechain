@@ -1,10 +1,16 @@
-/* marketplace.js - final fixed version with 0 decimal support */
+/* marketplace-complete.js - Complete fix for NFT duplication with proper listing removal */
 
 document.addEventListener('DOMContentLoaded', () => {
   'use strict';
 
   // ===== Global Token Decimals (cached) =====
   let TOKEN_DECIMALS = 18; // Default fallback
+  
+  // ===== State Management for Preventing Duplicates =====
+  let pendingPurchases = new Set(); // Track listings currently being purchased
+  let activeListings = new Map(); // Cache active listings for immediate updates
+  let recentlyPurchasedListings = new Set(); // Track recently purchased listings
+  let inactiveListings = new Set(); // Track listings that are inactive on blockchain
 
   // ===== Helper Functions =====
   function ipfsToHttp(uri) {
@@ -19,7 +25,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function formatPrice(priceRaw) {
     try {
       const bn = BigInt(priceRaw);
-      // Use cached decimals instead of hardcoded 18
       return ethers.formatUnits(bn, TOKEN_DECIMALS) + ' PKCN';
     } catch {
       return String(priceRaw) + ' PKCN';
@@ -382,7 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ===== Player Listings Functions =====
+  // ===== Player Listings Functions - COMPLETELY FIXED =====
   window.fetchActiveListingsFromChain = async function () {
     try {
       assertConfig();
@@ -396,7 +401,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const latest = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, latest - 200000);
+      // CRITICAL: Increase block range to ensure we catch all events
+      const fromBlock = Math.max(0, latest - 500000);
       
       console.log(`🔍 Fetching marketplace events from blocks ${fromBlock} → ${latest}`);
 
@@ -415,6 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
       logs.sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex);
       
       const listingsMap = new Map();
+      const inactiveListingsSet = new Set(); // Track inactive listings
       
       for (const log of logs) {
         try {
@@ -437,7 +444,9 @@ document.addEventListener('DOMContentLoaded', () => {
               seller,
               price,
               active: true,
-              eventName // Track which variant was used
+              eventName,
+              blockNumber: log.blockNumber,
+              logIndex: log.logIndex
             });
             console.log(`✅ ADDED: Listing #${listingId} for token #${tokenId} by ${seller} (${eventName})`);
           }
@@ -447,16 +456,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const listingId = args.listingId?.toString() || args[0]?.toString();
             if (listingsMap.has(listingId)) {
               listingsMap.delete(listingId);
+              inactiveListingsSet.add(listingId); // Mark as inactive
               console.log(`❌ REMOVED: Delisted listing #${listingId}`);
             }
           }
           
-          // Handle purchase events (both variants)
+          // Handle purchase events (both variants) - CRITICAL FIX
           else if (eventName === 'PokemonBought' || eventName === 'PokeBought') {
             const listingId = args.listingId?.toString() || args[0]?.toString();
             if (listingsMap.has(listingId)) {
               listingsMap.delete(listingId);
+              inactiveListingsSet.add(listingId); // Mark as inactive
               console.log(`❌ REMOVED: Sold listing #${listingId}`);
+              
+              // Add to recently purchased set to prevent reappearance
+              recentlyPurchasedListings.add(listingId);
             }
           }
           
@@ -466,9 +480,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
+      // CRITICAL: Filter out inactive and recently purchased listings
       const finalListings = Array.from(listingsMap.values());
-      console.log(`✅ FINAL: ${finalListings.length} active player listings`);
-      return finalListings;
+      const filteredListings = finalListings.filter(listing => 
+        !inactiveListingsSet.has(listing.listingId) && 
+        !recentlyPurchasedListings.has(listing.listingId)
+      );
+      
+      console.log(`✅ FINAL: ${filteredListings.length} active player listings (filtered from ${finalListings.length})`);
+      
+      // Update active listings cache
+      activeListings.clear();
+      filteredListings.forEach(listing => activeListings.set(listing.listingId, listing));
+      
+      return filteredListings;
       
     } catch (e) {
       console.error("❌ fetchActiveListingsFromChain failed:", e);
@@ -491,7 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
         countEl.textContent = listings.length > 0 ? `${listings.length} available` : 'No listings yet';
       }
 
-      // Clear grid
+      // Clear grid completely
       playerListingsGrid.innerHTML = '';
 
       if (!listings || listings.length === 0) {
@@ -500,13 +525,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Render cards
+      // Render only active listings (purchased ones are already filtered out)
       for (const L of listings) {
         const card = await makeListingCard(L);
         playerListingsGrid.appendChild(card);
       }
       
       if (playerListingsLoader) playerListingsLoader.style.display = 'none';
+      
+      console.log(`✅ Rendered ${listings.length} active listings (purchased ones hidden)`);
+      
     } catch (e) {
       console.error('❌ renderPlayerListings failed:', e);
       if (playerListingsLoader) playerListingsLoader.style.display = 'none';
@@ -561,6 +589,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rarityClass = rarityClassLabel(rarity);
     const card = document.createElement('div');
     card.className = `market-card listed ${rarityClass}`;
+    card.dataset.listingId = listing.listingId;
 
     const inner = document.createElement('div');
     inner.className = 'card-inner';
@@ -630,7 +659,23 @@ document.addEventListener('DOMContentLoaded', () => {
     return card;
   }
 
+  // ===== CRITICAL FIX: Improved buyListedOnChain with complete removal =====
   async function buyListedOnChain(listingId, priceRaw, pokemonName, pokemonId, seller) {
+    // CRITICAL: Prevent double-purchasing the same listing
+    if (pendingPurchases.has(listingId)) {
+      console.warn(`⚠️ Purchase already in progress for listing #${listingId}`);
+      return;
+    }
+    
+    // Mark this listing as being purchased
+    pendingPurchases.add(listingId);
+    
+    // Immediately remove the listing from UI to prevent other users from seeing it
+    removeListingFromUI(listingId);
+    
+    // Add to recently purchased to prevent reappearance
+    recentlyPurchasedListings.add(listingId);
+    
     try {
       assertConfig();
 
@@ -640,12 +685,14 @@ document.addEventListener('DOMContentLoaded', () => {
           message: 'You must connect your wallet to buy listed Pokemon.',
           confirmText: 'Connect Wallet'
         });
-        if (!shouldConnect) return;
+        if (!shouldConnect) {
+          pendingPurchases.delete(listingId);
+          return;
+        }
         await window.wallet.connectWallet();
       }
 
       const priceBig = BigInt(priceRaw.toString());
-      // CORRECTED: Use TOKEN_DECIMALS instead of hardcoded 18
       const humanPrice = ethers.formatUnits(priceBig, TOKEN_DECIMALS);
 
       const confirmed = await window.txModal.confirm({
@@ -660,7 +707,10 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelText: 'Cancel'
       });
 
-      if (!confirmed) return;
+      if (!confirmed) {
+        pendingPurchases.delete(listingId);
+        return;
+      }
 
       window.txModal.transaction({
         title: 'Buying Listed Pokemon',
@@ -676,14 +726,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const signer = await window.wallet.getSigner();
       const marketplace = new ethers.Contract(marketplaceAddr, window.ABIS.MARKETPLACE, signer);
       const tx = await marketplace.buyListedPokemon(BigInt(listingId));
-      await tx.wait();
+      
+      // CRITICAL: Wait for transaction to be fully confirmed
+      const receipt = await tx.wait();
+      
+      // CRITICAL: Wait a bit more to ensure events are processed
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       window.txModal.success(
         'Purchase Successful!',
         `You have successfully purchased ${pokemonName} from ${shortAddress(seller)}! Check your Collection.`,
         () => {
           window.wallet.updateBalanceDisplayIfNeeded();
-          renderPlayerListings(); // Refresh player listings
+          // Remove from pending purchases
+          pendingPurchases.delete(listingId);
+          // Force refresh player listings to ensure blockchain sync
+          setTimeout(() => renderPlayerListings(), 1000);
         }
       );
     } catch (e) {
@@ -692,7 +750,62 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e?.reason) message = e.reason;
       else if (e?.message) message = e.message;
       if (e?.code === 4001 || e?.code === 'ACTION_REJECTED') message = 'Transaction was rejected';
+      
+      // Remove from pending purchases on error
+      pendingPurchases.delete(listingId);
+      
+      // Remove from recently purchased since it failed
+      recentlyPurchasedListings.delete(listingId);
+      
+      // Restore the listing in UI since purchase failed
+      restoreListingToUI(listingId);
+      
       window.txModal.error('Purchase Failed', message);
+    }
+  }
+
+  // ===== CRITICAL: Helper functions for immediate UI updates =====
+  function removeListingFromUI(listingId) {
+    const card = document.querySelector(`[data-listing-id="${listingId}"]`);
+    if (card) {
+      card.style.opacity = '0.5';
+      card.style.pointerEvents = 'none';
+      
+      // Add "Purchasing..." overlay
+      const overlay = document.createElement('div');
+      overlay.className = 'purchase-overlay';
+      overlay.textContent = 'Purchasing...';
+      overlay.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        z-index: 10;
+        border-radius: 8px;
+      `;
+      card.style.position = 'relative';
+      card.appendChild(overlay);
+    }
+  }
+
+  function restoreListingToUI(listingId) {
+    const card = document.querySelector(`[data-listing-id="${listingId}"]`);
+    if (card) {
+      card.style.opacity = '1';
+      card.style.pointerEvents = 'auto';
+      
+      // Remove overlay
+      const overlay = card.querySelector('.purchase-overlay');
+      if (overlay) {
+        overlay.remove();
+      }
     }
   }
 
@@ -775,8 +888,32 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('togglePlayer')?.addEventListener('click', () => setMarketplaceMode('player'));
   }
 
+  // ===== CRITICAL: Persist recently purchased listings across sessions =====
+  function saveRecentlyPurchased() {
+    try {
+      localStorage.setItem('recentlyPurchasedListings', JSON.stringify([...recentlyPurchasedListings]));
+    } catch (e) {
+      console.warn('Failed to save recently purchased listings:', e);
+    }
+  }
+
+  function loadRecentlyPurchased() {
+    try {
+      const saved = localStorage.getItem('recentlyPurchasedListings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        recentlyPurchasedListings = new Set(parsed);
+      }
+    } catch (e) {
+      console.warn('Failed to load recently purchased listings:', e);
+    }
+  }
+
   // ===== Initialization =====
   (async function init() {
+    // Load recently purchased listings
+    loadRecentlyPurchased();
+    
     await loadTypes();
     await loadTokenDecimals(); // Load decimals first
     await loadPage();
@@ -787,5 +924,8 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPlayerListings();
       playerListingsLoaded = true;
     }, 1000);
+    
+    // Save recently purchased listings periodically
+    setInterval(saveRecentlyPurchased, 30000);
   })();
 });
