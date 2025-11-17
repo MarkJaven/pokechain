@@ -1,309 +1,366 @@
-/* tournament.js */
-document.addEventListener('DOMContentLoaded', () => {
-  'use strict';
+// Tournament State
+const tournamentState = {
+    selectedPokemon: null,
+    opponentCount: 7,
+    difficulty: 'normal',
+    isStarting: false
+};
 
-  // DOM Elements
-  const pokemonSelector = document.getElementById('pokemonSelector');
-  const startTournamentBtn = document.getElementById('startTournamentBtn');
-  const tournamentSetup = document.getElementById('tournamentSetup');
-  const battleArena = document.getElementById('battleArena');
-  const resultsScreen = document.getElementById('resultsScreen');
+// Cache for PokeAPI descriptions
+const descriptionCache = new Map();
 
-  // Battle Elements
-  const currentRoundEl = document.getElementById('currentRound');
-  const totalRoundsEl = document.getElementById('totalRounds');
-  const winsEl = document.getElementById('wins');
-  const lossesEl = document.getElementById('losses');
+// Tournament DOM Elements
+const elements = {
+    grid: document.getElementById('pokemonSelectionGrid'),
+    loading: document.getElementById('tournamentLoading'),
+    noPokemon: document.getElementById('noPokemonMessage'),
+    selectedDisplay: document.getElementById('selectedPokemonDisplay'),
+    selectedImage: document.getElementById('selectedPokemonImage'),
+    selectedName: document.getElementById('selectedPokemonName'),
+    selectedId: document.getElementById('selectedPokemonId'),
+    startBtn: document.getElementById('startTournamentBtn'),
+    startError: document.getElementById('startError'),
+    opponentSelect: document.getElementById('opponentCount'),
+    difficultySelect: document.getElementById('difficulty'),
+    overlay: document.getElementById('transitionOverlay'),
+    countdown: document.getElementById('countdown'),
+    status: document.getElementById('connectionStatus')
+};
 
-  const playerSpriteEl = document.getElementById('playerSprite');
-  const playerNameEl = document.getElementById('playerName');
-  const playerHpEl = document.getElementById('playerHp');
-  const playerMaxHpEl = document.getElementById('playerMaxHp');
-  const playerHpBarEl = document.getElementById('playerHpBar');
+// Fetch PokeAPI description
+async function fetchPokemonDescription(pokemonName) {
+    const cacheKey = pokemonName.toLowerCase();
+    if (descriptionCache.has(cacheKey)) {
+        return descriptionCache.get(cacheKey);
+    }
 
-  const enemySpriteEl = document.getElementById('enemySprite');
-  const enemyNameEl = document.getElementById('enemyName');
-  const enemyHpEl = document.getElementById('enemyHp');
-  const enemyMaxHpEl = document.getElementById('enemyMaxHp');
-  const enemyHpBarEl = document.getElementById('enemyHpBar');
-
-  const battleLog = document.getElementById('battleLog');
-  const attackBtn = document.getElementById('attackBtn');
-  const nextRoundBtn = document.getElementById('nextRoundBtn');
-
-  // Results Elements
-  const resultsTitle = document.getElementById('resultsTitle');
-  const resultsMessage = document.getElementById('resultsMessage');
-  const finalRoundsEl = document.getElementById('finalRounds');
-  const finalWinsEl = document.getElementById('finalWins');
-  const finalLossesEl = document.getElementById('finalLosses');
-  const rewardAmountEl = document.getElementById('rewardAmount');
-  const playAgainBtn = document.getElementById('playAgainBtn');
-
-  // Game State
-  let selectedPokemon = null;
-  let playerPokemon = null;
-  let enemyPokemon = null;
-  let currentRound = 1;
-  let totalRounds = 3;
-  let wins = 0;
-  let losses = 0;
-
-  // AI Enemy Pool (random pokemon IDs)
-  const ENEMY_POOL = [25, 6, 9, 94, 130, 65, 68, 76, 143, 115];
-
-  // Get player's collection
-  function getPlayerCollection() {
-    const starters = JSON.parse(localStorage.getItem('claimed_starters') || '[]');
-    const listings = JSON.parse(localStorage.getItem('pokemarket_listings') || '[]');
-    const purchased = listings.filter(l => l.sold && l.buyer === 'demo-buyer').map(l => l.pokemonId);
-    return [...starters, ...purchased];
-  }
-
-  // Fetch Pokemon
-  async function fetchPokemon(id) {
     try {
-      const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
-      return await res.json();
+        const speciesRes = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${cacheKey}`);
+        if (!speciesRes.ok) return "A mysterious Pokémon with unknown abilities.";
+        
+        const speciesData = await speciesRes.json();
+        
+        // Find English flavor text
+        const flavorText = speciesData.flavor_text_entries?.find(
+            entry => entry.language.name === 'en'
+        );
+        
+        const description = flavorText 
+            ? flavorText.flavor_text.replace(/\n|\f/g, ' ') 
+            : "A mysterious Pokémon with unknown abilities.";
+        
+        descriptionCache.set(cacheKey, description);
+        return description;
+    } catch (e) {
+        console.warn(`Failed to fetch description for ${pokemonName}:`, e);
+        return "A mysterious Pokémon with unknown abilities.";
+    }
+}
+
+// Load owned Pokémon for tournament selection
+async function loadTournamentPokemon() {
+    try {
+        elements.loading.style.display = 'block';
+        elements.noPokemon.style.display = 'none';
+        
+        const provider = await safeGetProvider();
+        if (!provider) {
+            elements.status.textContent = '⚠️ Please connect your wallet to view your Pokémon';
+            elements.status.style.color = '#ff6b00';
+            elements.loading.style.display = 'none';
+            return;
+        }
+
+        const acc = window.wallet?.getAccount?.();
+        if (!acc) {
+            elements.status.textContent = '⚠️ Please connect your wallet to view your Pokémon';
+            elements.status.style.color = '#ff6b00';
+            elements.loading.style.display = 'none';
+            return;
+        }
+
+        elements.status.textContent = 'Wallet connected';
+        elements.status.style.color = '#00ff9d';
+
+        const nftAddr = window.CONTRACTS?.POKEMON_NFT_ADDRESS;
+        const abi = window.ABIS?.POKEMON_NFT;
+        
+        if (!nftAddr || !abi) {
+            throw new Error('NFT contract not configured');
+        }
+
+        const nft = new ethers.Contract(nftAddr, abi, provider);
+        const tokenIds = await fetchOwnedTokens(provider, nft, acc.toLowerCase());
+        
+        if (tokenIds.length === 0) {
+            elements.loading.style.display = 'none';
+            elements.noPokemon.style.display = 'block';
+            elements.grid.innerHTML = '';
+            return;
+        }
+
+        // Render Pokémon cards
+        elements.grid.innerHTML = '';
+        const renderPromises = tokenIds.map(async (tokenId) => {
+            try {
+                const meta = await resolveMetadata(nft, tokenId);
+                if (!meta) return null;
+
+                let name = meta.name || `Token ${tokenId}`;
+                let image = meta.image ? ipfsToHttp(meta.image) : '';
+                let rarity = 'Common';
+                let pokemonId = tokenId;
+                let types = [];
+
+                // Get Pokémon data from PokeAPI
+                const pokeData = await fetchPokeAPIData(name);
+                if (pokeData) {
+                    pokemonId = pokeData.id;
+                    types = pokeData.types?.map(t => t.type.name) || [];
+                }
+
+                // Extract rarity
+                if (meta.attributes && Array.isArray(meta.attributes)) {
+                    const rarityAttr = meta.attributes.find(a => 
+                        a.trait_type?.toLowerCase() === 'rarity'
+                    );
+                    if (rarityAttr && rarityAttr.value) {
+                        rarity = rarityAttr.value;
+                    }
+                }
+
+                // Fetch description
+                const description = await fetchPokemonDescription(name);
+
+                const card = makeSelectableCard({
+                    uniqueId: tokenId,
+                    pokemonId,
+                    name,
+                    image,
+                    rarity,
+                    types,
+                    description,
+                    tokenId
+                });
+
+                return card;
+            } catch (tokenError) {
+                console.warn(`Skipping token #${tokenId}:`, tokenError);
+                return null;
+            }
+        });
+
+        const cards = await Promise.all(renderPromises);
+        cards.filter(card => card !== null).forEach(card => elements.grid.appendChild(card));
+        
+        elements.loading.style.display = 'none';
+
     } catch (error) {
-      console.error('Failed to fetch pokemon:', error);
-      return null;
+        console.error('Failed to load tournament Pokémon:', error);
+        elements.loading.style.display = 'none';
+        elements.noPokemon.style.display = 'block';
     }
-  }
+}
 
-  // Load Player Collection
-  async function loadPlayerCollection() {
-    const collection = getPlayerCollection();
-    
-    if (collection.length === 0) {
-      pokemonSelector.innerHTML = '<p style="color: rgba(255,255,255,0.5); padding: 40px;">No Pokémon in your collection. Visit the Collection page to claim starters!</p>';
-      return;
-    }
-
-    for (const id of collection) {
-      const pokemon = await fetchPokemon(id);
-      if (pokemon) {
-        const card = createSelectorCard(pokemon);
-        pokemonSelector.appendChild(card);
-      }
-    }
-  }
-
-  // Create Selector Card
-  function createSelectorCard(pokemon) {
+// Create a selectable Pokémon card for tournament
+function makeSelectableCard({ uniqueId, pokemonId, name, image, rarity, types, description, tokenId }) {
     const card = document.createElement('div');
-    card.className = 'selector-card';
-    card.dataset.pokemonId = pokemon.id;
+    card.className = `market-card ${(rarity || 'common').toLowerCase()} tournament-card`;
+    card.dataset.tokenId = uniqueId;
+    card.dataset.pokemonId = pokemonId;
+    card.dataset.name = name;
 
+    const inner = document.createElement('div');
+    inner.className = 'card-inner';
+
+    // Unique ID Badge
+    const uniqueIdBadge = document.createElement('div');
+    uniqueIdBadge.className = 'unique-id-badge';
+    uniqueIdBadge.textContent = `#${uniqueId}`;
+
+    // Art
+    const art = document.createElement('div');
+    art.className = 'art';
     const img = document.createElement('img');
-    img.src = pokemon.sprites?.other?.['official-artwork']?.front_default || pokemon.sprites?.front_default;
-    img.alt = pokemon.name;
+    img.src = image || 'images/pokeball.png';
+    img.alt = name || '';
+    img.onerror = () => { img.src = 'images/pokeball.png'; };
+    art.appendChild(img);
 
-    const name = document.createElement('div');
-    name.className = 'selector-name';
-    name.textContent = pokemon.name;
+    // Name
+    const h4 = document.createElement('h4');
+    h4.className = 'name';
+    h4.textContent = `#${pokemonId} ${name}`;
 
-    card.appendChild(img);
-    card.appendChild(name);
+    // Types
+    const typesDiv = document.createElement('div');
+    typesDiv.className = 'types';
+    if (types && types.length > 0) {
+        types.forEach(type => {
+            const badge = document.createElement('span');
+            badge.className = 'type-badge';
+            badge.textContent = type.toUpperCase();
+            typesDiv.appendChild(badge);
+        });
+    }
 
-    card.onclick = () => selectPokemon(card, pokemon);
+    // Description
+    const descriptionDiv = document.createElement('div');
+    descriptionDiv.className = 'pokemon-description';
+    descriptionDiv.textContent = description;
+
+    // Selection indicator
+    const selectIndicator = document.createElement('div');
+    selectIndicator.className = 'selection-indicator';
+    selectIndicator.innerHTML = '✓ SELECTED';
+    
+    inner.appendChild(art);
+    inner.appendChild(h4);
+    inner.appendChild(typesDiv);
+    inner.appendChild(descriptionDiv);
+    inner.appendChild(selectIndicator);
+    card.appendChild(uniqueIdBadge);
+    card.appendChild(inner);
+
+    // Click handler for selection
+    card.addEventListener('click', () => selectPokemonForTournament({
+        tokenId: uniqueId,
+        pokemonId,
+        name,
+        image,
+        rarity,
+        types,
+        description,
+        cardElement: card
+    }));
 
     return card;
-  }
+}
 
-  // Select Pokemon
-  function selectPokemon(card, pokemon) {
-    document.querySelectorAll('.selector-card').forEach(c => c.classList.remove('selected'));
-    card.classList.add('selected');
-    selectedPokemon = pokemon;
-    startTournamentBtn.disabled = false;
-  }
+// Handle Pokémon selection
+function selectPokemonForTournament(pokemon) {
+    // Deselect previous
+    document.querySelectorAll('.tournament-card.selected').forEach(card => {
+        card.classList.remove('selected');
+    });
 
-  // Start Tournament
-  startTournamentBtn.onclick = async () => {
-    if (!selectedPokemon) return;
+    // Select new
+    pokemon.cardElement.classList.add('selected');
+    tournamentState.selectedPokemon = pokemon;
 
-    playerPokemon = {
-      data: selectedPokemon,
-      hp: selectedPokemon.stats.find(s => s.stat.name === 'hp').base_stat,
-      maxHp: selectedPokemon.stats.find(s => s.stat.name === 'hp').base_stat,
-      attack: selectedPokemon.stats.find(s => s.stat.name === 'attack').base_stat
-    };
+    // Update selected display
+    elements.selectedImage.src = pokemon.image || 'images/pokeball.png';
+    elements.selectedName.textContent = `#${pokemon.pokemonId} ${pokemon.name}`;
+    elements.selectedId.textContent = `Token #${pokemon.tokenId}`;
+    elements.selectedDisplay.style.display = 'flex';
 
-    currentRound = 1;
-    wins = 0;
-    losses = 0;
+    // Enable start button
+    elements.startBtn.disabled = false;
+    elements.startError.style.display = 'none';
+}
 
-    tournamentSetup.style.display = 'none';
-    battleArena.style.display = 'block';
-
-    await startNewRound();
-  };
-
-  // Start New Round
-  async function startNewRound() {
-    // Get random enemy
-    const enemyId = ENEMY_POOL[Math.floor(Math.random() * ENEMY_POOL.length)];
-    const enemyData = await fetchPokemon(enemyId);
-
-    enemyPokemon = {
-      data: enemyData,
-      hp: enemyData.stats.find(s => s.stat.name === 'hp').base_stat,
-      maxHp: enemyData.stats.find(s => s.stat.name === 'hp').base_stat,
-      attack: enemyData.stats.find(s => s.stat.name === 'attack').base_stat
-    };
-
-    // Reset player HP
-    playerPokemon.hp = playerPokemon.maxHp;
-
-    // Update UI
-    currentRoundEl.textContent = currentRound;
-    totalRoundsEl.textContent = totalRounds;
-    winsEl.textContent = wins;
-    lossesEl.textContent = losses;
-
-    playerSpriteEl.src = playerPokemon.data.sprites?.other?.['official-artwork']?.front_default;
-    playerNameEl.textContent = playerPokemon.data.name;
-    playerHpEl.textContent = playerPokemon.hp;
-    playerMaxHpEl.textContent = playerPokemon.maxHp;
-    playerHpBarEl.style.width = '100%';
-
-    enemySpriteEl.src = enemyPokemon.data.sprites?.other?.['official-artwork']?.front_default;
-    enemyNameEl.textContent = enemyPokemon.data.name;
-    enemyHpEl.textContent = enemyPokemon.hp;
-    enemyMaxHpEl.textContent = enemyPokemon.maxHp;
-    enemyHpBarEl.style.width = '100%';
-
-    battleLog.innerHTML = '<div class="log-entry">Battle Start! Good luck!</div>';
-
-    attackBtn.style.display = 'block';
-    nextRoundBtn.style.display = 'none';
-    attackBtn.disabled = false;
-  };
-
-  // Attack
-  attackBtn.onclick = () => {
-    attackBtn.disabled = true;
-
-    // Player attacks
-    const playerDamage = Math.floor(playerPokemon.attack * (0.8 + Math.random() * 0.4));
-    enemyPokemon.hp = Math.max(0, enemyPokemon.hp - playerDamage);
-    updateHP('enemy');
-    addLog(`${playerPokemon.data.name} attacks! <span class="log-damage">-${playerDamage} damage</span>`);
-
-    setTimeout(() => {
-      if (enemyPokemon.hp <= 0) {
-        roundWin();
+// Start tournament with transition
+async function startTournament() {
+    if (!tournamentState.selectedPokemon || tournamentState.isStarting) {
+        elements.startError.style.display = 'block';
         return;
-      }
+    }
 
-      // Enemy attacks
-      const enemyDamage = Math.floor(enemyPokemon.attack * (0.8 + Math.random() * 0.4));
-      playerPokemon.hp = Math.max(0, playerPokemon.hp - enemyDamage);
-      updateHP('player');
-      addLog(`${enemyPokemon.data.name} attacks! <span class="log-damage">-${enemyDamage} damage</span>`);
+    tournamentState.isStarting = true;
+    elements.startBtn.disabled = true;
+    elements.startError.style.display = 'none';
 
-      if (playerPokemon.hp <= 0) {
-        roundLoss();
-      } else {
-        attackBtn.disabled = false;
-      }
+    // Store settings
+    tournamentState.opponentCount = parseInt(elements.opponentSelect.value);
+    tournamentState.difficulty = elements.difficultySelect.value;
+
+    // Show transition
+    showBattleTransition();
+}
+
+// Show VS transition with countdown
+function showBattleTransition() {
+    const overlay = elements.overlay;
+    const countdown = elements.countdown;
+    const playerImg = document.getElementById('playerPokemonBattle');
+    
+    // Set player Pokemon image
+    playerImg.src = tournamentState.selectedPokemon.image || 'images/pokeball.png';
+    
+    // Random AI trainer name
+    const aiNames = ['GARY OAK', 'LANCE', 'CYNTHIA', 'RED', 'BLUE', 'STEVEN', 'IRIS'];
+    document.getElementById('aiTrainerName').textContent = 
+        aiNames[Math.floor(Math.random() * aiNames.length)];
+    
+    // Show overlay
+    overlay.style.display = 'flex';
+    
+    // Start countdown
+    let count = 3;
+    countdown.textContent = count;
+    countdown.style.fontSize = '6rem';
+    countdown.classList.remove('battle-glow');
+    
+    const countdownInterval = setInterval(() => {
+        count--;
+        if (count > 0) {
+            countdown.textContent = count;
+            countdown.classList.add('pulse');
+            setTimeout(() => countdown.classList.remove('pulse'), 500);
+        } else if (count === 0) {
+            countdown.textContent = 'BATTLE!';
+            countdown.style.fontSize = '4rem';
+            countdown.classList.add('battle-glow');
+        } else {
+            clearInterval(countdownInterval);
+            // Hide overlay and proceed to battle (Phase 2)
+            overlay.style.display = 'none';
+            initiateTournamentBattle();
+        }
     }, 1000);
-  };
+}
 
-  // Update HP
-  function updateHP(side) {
-    if (side === 'player') {
-      playerHpEl.textContent = playerPokemon.hp;
-      const percent = (playerPokemon.hp / playerPokemon.maxHp) * 100;
-      playerHpBarEl.style.width = percent + '%';
+// Placeholder for Phase 2 battle initiation
+function initiateTournamentBattle() {
+    console.log('🎉 TOURNAMENT STARTING!', tournamentState);
+    console.log(`Your ${tournamentState.selectedPokemon.name} vs ${tournamentState.opponentCount} opponents on ${tournamentState.difficulty} difficulty`);
+    
+    // For Phase 1, just show success message
+    if (window.txModal) {
+        window.txModal.success(
+            'Tournament Started!',
+            `Your ${tournamentState.selectedPokemon.name} is ready to battle ${tournamentState.opponentCount} opponents on ${tournamentState.difficulty} difficulty. (Phase 2: Battle system coming soon!)`
+        );
     } else {
-      enemyHpEl.textContent = enemyPokemon.hp;
-      const percent = (enemyPokemon.hp / enemyPokemon.maxHp) * 100;
-      enemyHpBarEl.style.width = percent + '%';
+        alert(`Tournament Started! Your ${tournamentState.selectedPokemon.name} is ready to battle!`);
     }
-  }
+    
+    // Reset state
+    tournamentState.isStarting = false;
+    elements.startBtn.disabled = false;
+}
 
-  // Add Log Entry
-  function addLog(message) {
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    entry.innerHTML = message;
-    battleLog.appendChild(entry);
-    battleLog.scrollTop = battleLog.scrollHeight;
-  }
-
-  // Round Win
-  function roundWin() {
-    wins++;
-    winsEl.textContent = wins;
-    addLog(`<span class="log-heal">Victory! ${playerPokemon.data.name} wins!</span>`);
-    attackBtn.style.display = 'none';
-
-    if (currentRound < totalRounds) {
-      nextRoundBtn.style.display = 'block';
+// Initialize tournament page
+window.addEventListener('DOMContentLoaded', () => {
+    // Wait for wallet to be ready
+    if (window.wallet?.getAccount?.()) {
+        loadTournamentPokemon();
     } else {
-      setTimeout(showResults, 2000);
+        // Listen for wallet connection
+        document.addEventListener('wallet.ready', () => {
+            loadTournamentPokemon();
+        });
     }
-  }
-
-  // Round Loss
-  function roundLoss() {
-    losses++;
-    lossesEl.textContent = losses;
-    addLog(`<span class="log-damage">Defeat! ${enemyPokemon.data.name} wins!</span>`);
-    attackBtn.style.display = 'none';
-
-    if (currentRound < totalRounds) {
-      nextRoundBtn.style.display = 'block';
-    } else {
-      setTimeout(showResults, 2000);
-    }
-  }
-
-  // Next Round
-  nextRoundBtn.onclick = () => {
-    currentRound++;
-    startNewRound();
-  };
-
-  // Show Results
-  function showResults() {
-    battleArena.style.display = 'none';
-    resultsScreen.style.display = 'block';
-
-    const winRate = wins / totalRounds;
-    let reward = 0;
-
-    if (winRate >= 0.67) {
-      resultsTitle.textContent = '🏆 Champion!';
-      resultsMessage.textContent = 'Outstanding performance! You dominated the tournament!';
-      reward = 100;
-    } else if (winRate >= 0.34) {
-      resultsTitle.textContent = '⭐ Good Fight!';
-      resultsMessage.textContent = 'Well played! You showed great skill!';
-      reward = 50;
-    } else {
-      resultsTitle.textContent = '💪 Keep Training!';
-      resultsMessage.textContent = 'Better luck next time! Keep training your Pokémon!';
-      reward = 10;
-    }
-
-    finalRoundsEl.textContent = totalRounds;
-    finalWinsEl.textContent = wins;
-    finalLossesEl.textContent = losses;
-    rewardAmountEl.textContent = `${reward} $PCT`;
-  }
-
-  // Play Again
-  playAgainBtn.onclick = () => {
-    resultsScreen.style.display = 'none';
-    tournamentSetup.style.display = 'block';
-    selectedPokemon = null;
-    startTournamentBtn.disabled = true;
-    document.querySelectorAll('.selector-card').forEach(c => c.classList.remove('selected'));
-  };
-
-  // Initialize
-  loadPlayerCollection();
+    
+    // Settings change handlers
+    elements.opponentSelect.addEventListener('change', (e) => {
+        tournamentState.opponentCount = parseInt(e.target.value);
+    });
+    
+    elements.difficultySelect.addEventListener('change', (e) => {
+        tournamentState.difficulty = e.target.value;
+    });
+    
+    // Start button handler
+    elements.startBtn.addEventListener('click', startTournament);
 });

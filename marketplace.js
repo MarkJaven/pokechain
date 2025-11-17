@@ -1,10 +1,8 @@
-/* marketplace-complete.js - Complete fix for NFT duplication with proper listing removal */
 
 document.addEventListener('DOMContentLoaded', () => {
   'use strict';
 
-  // ===== Global Token Decimals (cached) =====
-  let TOKEN_DECIMALS = 18; // Default fallback
+  let TOKEN_DECIMALS = 18; 
   
   // ===== State Management for Preventing Duplicates =====
   let pendingPurchases = new Set(); // Track listings currently being purchased
@@ -48,7 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ===== NEW: Cleanup legacy ghost listings =====
   async function cleanupLegacyListings() {
     try {
       const saved = localStorage.getItem('recentlyPurchasedListings');
@@ -63,7 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ===== NEW: Helper for gas estimation issues =====
   async function callWithManualGas(contract, method, args = [], options = {}) {
     try {
       // Try normal call first
@@ -77,7 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ===== Main Variables =====
   const marketGrid = document.getElementById('officialMarketGrid');
   const playerListingsGrid = document.getElementById('playerListingsGrid');
   const loader = document.getElementById('loader');
@@ -416,8 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ===== Player Listings Functions - COMPLETELY FIXED WITH BLOCKCHAIN VERIFICATION =====
-  // ===== FINAL FIXED VERSION: Handles both escrow and approval patterns =====
+
   window.fetchActiveListingsFromChain = async function () {
     try {
       assertConfig();
@@ -597,10 +591,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       if (playerListingsLoader) playerListingsLoader.style.display = 'none';
-      console.log(`✅ Rendered ${finalListings.length} active listings`);
+      console.log(`Rendered ${finalListings.length} active listings`);
       
     } catch (e) {
-      console.error('❌ renderPlayerListings failed:', e);
+      console.error('renderPlayerListings failed:', e);
       if (playerListingsLoader) playerListingsLoader.style.display = 'none';
     }
   }
@@ -619,7 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Get tokenURI
       const uri = await nft.tokenURI(listing.tokenId);
-      console.log(`🖼️ Token #${listing.tokenId} URI:`, uri);
+      console.log(`Token #${listing.tokenId} URI:`, uri);
       
       const meta = await parseTokenURI(uri);
       if (meta) {
@@ -646,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     } catch (e) {
-      console.error(`❌ Failed to load metadata for token #${listing.tokenId}:`, e);
+      console.error(`Failed to load metadata for token #${listing.tokenId}:`, e);
     }
 
     // Apply rarity class to card
@@ -681,7 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const ownerDiv = document.createElement('div');
     ownerDiv.className = `owner-badge ${isOwner ? 'self' : ''}`;
-    ownerDiv.textContent = isOwner ? '👤 Your Listing' : `👤 Seller: ${shortAddress(listing.seller)}`;
+    ownerDiv.textContent = isOwner ? 'Your Listing' : `Seller: ${shortAddress(listing.seller)}`;
 
     const abilities = document.createElement('div');
     abilities.className = 'abilities';
@@ -723,7 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return card;
   }
 
-  // ===== CRITICAL FIX: Improved buyListedOnChain with complete removal =====
+  // ===== Improved buyListedOnChain with complete removal =====
   async function buyListedOnChain(listingId, priceRaw, pokemonName, pokemonId, seller) {
     // CRITICAL: Prevent double-purchasing the same listing
     if (pendingPurchases.has(listingId)) {

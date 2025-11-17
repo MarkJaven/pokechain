@@ -1,17 +1,140 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tournament - PokéChain</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link rel="stylesheet" href="marketplace.css" />
-  <link rel="stylesheet" href="tournament.css" />
-</head>
-<body>
-  <p>tournament page under construction</p>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PokéChain — Tournament</title>
 
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="collection-marketplace.css" />
+  <link rel="stylesheet" href="tournament.css" />
+  <link rel="stylesheet" href="transaction-modal.css" />
+</head>
+
+<body>
+  <!-- === NAVBAR === -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-transparent px-4 py-3">
+    <a class="navbar-brand fs-3 fw-bold text-warning" href="index.html">Poké<span class="text-success">Chain</span></a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+      <ul class="navbar-nav gap-3 align-items-center">
+        <li class="nav-item"><a class="nav-link" href="index.html">Home</a></li>
+        <li class="nav-item"><a class="nav-link" href="marketplace.html">Marketplace</a></li>
+        <li class="nav-item"><a class="nav-link" href="collection.html">Collection</a></li>
+        <li class="nav-item"><a class="nav-link active" href="tournament.html">Tournament</a></li>
+        <li class="nav-item"><div id="pctBalance" class="small-muted px-2">—</div></li>
+        <li class="nav-item"><button id="walletDisplay" class="btn btn-sm btn-outline-light">Connect</button></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="container-fluid px-4">
+    <!-- === COLLECTION HERO === -->
+    <div class="collection-hero">
+      <h1>PokéChain Tournament Stadium</h1>
+      <div class="small-muted">A round robin style Pokémon Tournament </div>
+      <div id="connectionStatus" class="small-muted" style="color: #ff6b00; margin-top: 10px;">
+        Connect wallet to view your Pokémon
+      </div>
+    </div>
+
+    <!-- === TOURNAMENT SETTINGS PANEL === -->
+    <div class="tournament-settings-panel">
+      <!-- Selected Pokemon Display -->
+      <div id="selectedPokemonDisplay" class="selected-pokemon-display" style="display: none;">
+        <img id="selectedPokemonImage" src="" alt="">
+        <div class="selected-pokemon-info">
+          <div id="selectedPokemonName" class="selected-pokemon-name"></div>
+          <div id="selectedPokemonId" class="selected-pokemon-id"></div>
+        </div>
+      </div>
+
+      <!-- Tournament Options -->
+      <div class="tournament-options">
+        <div class="tournament-option">
+          <label for="opponentCount">Opponents</label>
+          <select id="opponentCount" class="tournament-select">
+            <option value="5">5 Trainers (Quick)</option>
+            <option value="7" selected>7 Trainers (Standard)</option>
+            <option value="10">10 Trainers (Epic)</option>
+          </select>
+        </div>
+
+        <div class="tournament-option">
+          <label for="difficulty">Difficulty</label>
+          <select id="difficulty" class="tournament-select">
+            <option value="easy">Easy</option>
+            <option value="normal" selected>Normal</option>
+            <option value="hard">Hard</option>
+            <option value="insane">Insane</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Start Button -->
+      <button id="startTournamentBtn" class="btn-start-tournament" disabled>
+        START TOURNAMENT
+      </button>
+    </div>
+
+    <p id="startError" class="tournament-error" style="display: none;">
+      Please select a Pokémon first!
+    </p>
+
+    <!-- === POKEMON SELECTION GRID === -->
+    <div class="tournament-section-title">
+      <h2>Choose Your Pokémon</h2>
+      <div class="small-muted">Click a Pokémon to select it for battle</div>
+    </div>
+
+    <div id="pokemonSelectionGrid" class="market-grid">
+      <!-- Loading state -->
+      <div id="tournamentLoading" class="loader" style="grid-column: 1/-1;">
+        <div class="spinner-border text-success" role="status"></div>
+        <p style="margin-top: 15px; color: rgba(255,255,255,0.6);">Loading your collection...</p>
+      </div>
+      
+      <!-- No Pokemon Message -->
+      <div id="noPokemonMessage" class="empty-collection" style="display: none; grid-column: 1/-1;">
+        <h3>You don't own any Pokémon yet.</h3>
+        <p>Visit the marketplace to buy your first battle companion!</p>
+        <a href="marketplace.html" class="btn-marketplace">Buy Pokémon</a>
+      </div>
+    </div>
+  </main>
+
+  <!-- === TRANSITION OVERLAY === -->
+  <div id="transitionOverlay" class="transition-overlay" style="display: none;">
+    <div class="transition-content">
+      <div class="vs-animation">
+        <div class="vs-side">
+          <div class="trainer-card">
+            <h3>YOU</h3>
+            <img id="playerPokemonBattle" src="" alt="Your Pokemon">
+          </div>
+        </div>
+        <div class="vs-text">VS</div>
+        <div class="vs-side">
+          <div class="trainer-card ai-trainer">
+            <h3 id="aiTrainerName">AI TRAINER</h3>
+            <div class="pokeball-pulse"></div>
+          </div>
+        </div>
+      </div>
+      <div id="countdown" class="countdown">3</div>
+    </div>
+  </div>
+
+  <!-- === SCRIPTS === -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="./config.js"></script>
+  <script src="./wallet.js"></script>
+  <script src="transaction-modal.js"></script>
+  <script src="collection.js"></script>
   <script src="tournament.js"></script>
 </body>
 </html>

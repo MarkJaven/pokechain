@@ -1,4 +1,3 @@
-// wallet.js - improved checks for missing contract code + clearer errors
 (async function(){
   'use strict';
 

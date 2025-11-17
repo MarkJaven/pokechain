@@ -4,7 +4,6 @@ window.CONTRACTS = {
   POKEMON_NFT_ADDRESS: "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B"
 };
 
-// Complete ABI with ALL event name variants
 window.ABIS = {
   POKEMON_NFT: [
     "function mint(address to, string memory name, string memory rarity, string memory imageURI) public returns (uint256)",
@@ -13,7 +12,6 @@ window.ABIS = {
     "function balanceOf(address owner) public view returns (uint256)",
     "function remainingSupply(string memory rarity) public view returns (uint256)",
     
-    // CRITICAL: Approval functions
     "function approve(address to, uint256 tokenId) public",
     "function setApprovalForAll(address operator, bool approved) public",
     "function isApprovedForAll(address owner, address operator) public view returns (bool)",
@@ -22,7 +20,7 @@ window.ABIS = {
     "function transferFrom(address from, address to, uint256 tokenId) public",
     "function safeTransferFrom(address from, address to, uint256 tokenId) public",
     
-    // Events (with all possible name variants)
+
     "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
     "event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)",
     "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)",
@@ -33,10 +31,10 @@ window.ABIS = {
   "function buyPokemon(string memory name, string memory rarity, string memory imageURI, uint256 price) public returns (uint256)",
   "function listPokemon(uint256 tokenId, uint256 price) public returns (uint256)", // Note: returns uint256
   "function buyListedPokemon(uint256 listingId) public",
-  "function cancelListing(uint256 listingId) public", // <-- FIX: This is the real function name
+  "function cancelListing(uint256 listingId) public", 
   "function remainingSupply(string calldata rarity) external view returns (uint256)",
   
-  // Events (your events are correct)
+  
   "event PokeListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
   "event ListingBought(uint256 indexed listingId, uint256 indexed tokenId, address indexed buyer, uint256 price)",
   "event PokeDelisted(uint256 indexed listingId, uint256 indexed tokenId)",
