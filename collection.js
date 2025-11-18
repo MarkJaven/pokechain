@@ -46,33 +46,39 @@ async function fetchPokeAPIData(pokemonName) {
   }
 }
 
-function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities }) {
+function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities, description }) {
   const card = document.createElement('div');
   card.className = `market-card ${(rarity || 'common').toLowerCase()}`;
-  card.dataset.tokenId = uniqueId; // Store token ID for tracking
+  card.dataset.tokenId = uniqueId;
   
+  // Make card clickable - show listing modal
+  card.addEventListener('click', () => {
+    showListingModal({ uniqueId, name, pokemonId, image, rarity });
+  });
+
   const inner = document.createElement('div');
   inner.className = 'card-inner';
 
-  // Unique ID Badge (absolute positioned on card, not inner)
-  const uniqueIdBadge = document.createElement('div');
-  uniqueIdBadge.className = 'unique-id-badge';
-  uniqueIdBadge.textContent = `#${uniqueId}`;
+  // NFT ID Badge - Upper Right
+  const nftIdBadge = document.createElement('div');
+  nftIdBadge.className = 'nft-id-badge';
+  nftIdBadge.textContent = `#${uniqueId}`;
 
-  // Art section
+  // Pokemon Image
   const art = document.createElement('div');
   art.className = 'art';
   const img = document.createElement('img');
-  img.src = image || '';
+  img.src = image || 'images/pokeball.png';
   img.alt = name || '';
+  img.onerror = () => { img.src = 'images/pokeball.png'; };
   art.appendChild(img);
 
-  // Pokemon name with PokeAPI ID
-  const h4 = document.createElement('h4');
-  h4.className = 'name';
-  h4.textContent = `#${pokemonId} ${name || ''}`;
+  // Pokemon name with ID
+  const nameDiv = document.createElement('h4');
+  nameDiv.className = 'name';
+  nameDiv.textContent = `#${pokemonId} ${name}`;
 
-  // Types section
+  // Types
   const typesDiv = document.createElement('div');
   typesDiv.className = 'types';
   if (types && types.length > 0) {
@@ -84,52 +90,70 @@ function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities }
     });
   }
 
-  // Abilities section
+  // Abilities
   const abilitiesDiv = document.createElement('div');
   abilitiesDiv.className = 'abilities';
-  abilitiesDiv.textContent = abilities || '';
+  if (abilities && Array.isArray(abilities) && abilities.length > 0) {
+    const abilityNames = abilities.slice(0, 3).map(ab => ab.name.replace(/-/g, ' '));
+    abilitiesDiv.textContent = `Abilities: ${abilityNames.join(', ')}`;
+  } else if (typeof abilities === 'string') {
+    abilitiesDiv.textContent = abilities;
+  } else {
+    abilitiesDiv.textContent = 'Abilities: Unknown';
+  }
+
+  // Description
+  const descriptionDiv = document.createElement('div');
+  descriptionDiv.className = 'pokemon-description';
+  descriptionDiv.textContent = description || 'A mysterious Pokémon with unknown abilities.';
 
   // Owned badge
   const ownedBadge = document.createElement('div');
   ownedBadge.className = 'owned-badge';
   ownedBadge.textContent = 'Owned';
 
-  // Actions wrapper with sell button
-  const actionsDiv = document.createElement('div');
-  actionsDiv.className = 'actions';
-  const sellBtn = document.createElement('button');
-  sellBtn.className = 'btn-primary-action btn-sell';
-  sellBtn.textContent = 'List for Sale';
-  sellBtn.onclick = () => handleSell(uniqueId, name, pokemonId, image, rarity);
-  actionsDiv.appendChild(sellBtn);
-
-  // Build the card structure
+  // Build card
   inner.appendChild(art);
-  inner.appendChild(h4);
+  inner.appendChild(nameDiv);
   inner.appendChild(typesDiv);
   inner.appendChild(abilitiesDiv);
+  inner.appendChild(descriptionDiv);
   inner.appendChild(ownedBadge);
-  inner.appendChild(actionsDiv);
   
-  card.appendChild(uniqueIdBadge);
+  card.appendChild(nftIdBadge);
   card.appendChild(inner);
   
   return card;
 }
 
-// ===== IMPROVED: Better error handling and user feedback =====
-async function handleSell(uniqueId, name, pokemonId, image, rarity) {
+async function showListingModal({ uniqueId, name, pokemonId, image, rarity }) {
   try {
     if (!window.txModal) {
       alert('Transaction modal not loaded. Please refresh the page.');
       return;
     }
 
+    // Show confirmation modal first
+    const confirmed = await window.txModal.confirm({
+      type: 'confirm',
+      title: 'List Pokémon for Sale',
+      message: `Do you want to list this Pokémon on the marketplace?`,
+      details: [
+        { label: 'Pokémon', value: `#${pokemonId} ${name}` },
+        { label: 'Rarity', value: rarity },
+        { label: 'NFT ID', value: `#${uniqueId}` }
+      ],
+      confirmText: 'Continue',
+      cancelText: 'Cancel'
+    });
+
+    if (!confirmed) return;
+
     // Prompt for price
     const priceInput = await window.txModal.prompt({
       type: 'confirm',
-      title: 'List Pokemon for Sale',
-      message: `Set the price for #${pokemonId} ${name}`,
+      title: 'Set Sale Price',
+      message: `Enter the price for #${pokemonId} ${name}`,
       label: 'Price (PKCN)',
       placeholder: 'Enter price in PKCN tokens',
       inputType: 'number',
@@ -144,26 +168,36 @@ async function handleSell(uniqueId, name, pokemonId, image, rarity) {
       }
     });
 
-    if (!priceInput) return; // User cancelled
+    if (!priceInput) return;
 
     const price = parseFloat(priceInput);
 
-    // Confirm listing
-    const confirmed = await window.txModal.confirm({
+    // Final confirmation with price
+    const finalConfirmed = await window.txModal.confirm({
       title: 'Confirm Listing',
-      message: `Are you sure you want to list this Pokemon for sale?`,
+      message: `Confirm listing your Pokémon for sale?`,
       details: [
-        { label: 'Pokemon', value: `#${pokemonId} ${name}` },
+        { label: 'Pokémon', value: `#${pokemonId} ${name}` },
         { label: 'Rarity', value: rarity },
-        { label: 'Token ID', value: `#${uniqueId}` },
+        { label: 'NFT ID', value: `#${uniqueId}` },
         { label: 'Price', value: `${price} PKCN`, highlight: true }
       ],
       confirmText: 'Confirm Listing',
       cancelText: 'Cancel'
     });
 
-    if (!confirmed) return;
+    if (!finalConfirmed) return;
 
+    // Proceed with listing
+    await handleSellWithModal(uniqueId, name, pokemonId, image, rarity, price);
+
+  } catch (err) {
+    console.error('Listing modal error:', err);
+  }
+}
+// ===== IMPROVED: Better error handling and user feedback =====
+async function handleSellWithModal(uniqueId, name, pokemonId, image, rarity, price) {
+  try {
     // Check wallet connection
     if (!window.wallet || !window.wallet.getAccount()) {
       if (!await window.txModal.confirm({
@@ -177,7 +211,7 @@ async function handleSell(uniqueId, name, pokemonId, image, rarity) {
 
     // Start transaction
     window.txModal.transaction({
-      title: 'Listing Pokemon',
+      title: 'Listing Pokémon',
       message: 'Approving marketplace access and creating listing...',
       subtitle: 'Please confirm both transactions in your wallet.'
     });
@@ -213,7 +247,7 @@ async function handleSell(uniqueId, name, pokemonId, image, rarity) {
       if (!isApproved) {
         window.txModal.transaction({
           title: 'Approve Marketplace',
-          message: 'Granting marketplace permission to manage your Pokemon...',
+          message: 'Granting marketplace permission to manage your Pokémon...',
           subtitle: 'Confirm the approval transaction in your wallet.'
         });
         
@@ -223,10 +257,9 @@ async function handleSell(uniqueId, name, pokemonId, image, rarity) {
     } catch (approvalError) {
       console.warn('Approval check/set failed, trying individual approval:', approvalError);
       
-      // Fallback: Try individual token approval
       window.txModal.transaction({
         title: 'Approve Marketplace',
-        message: 'Granting marketplace permission for this Pokemon...',
+        message: 'Granting marketplace permission for this Pokémon...',
         subtitle: 'Confirm the approval transaction in your wallet.'
       });
       
@@ -238,10 +271,10 @@ async function handleSell(uniqueId, name, pokemonId, image, rarity) {
       }
     }
 
-    // Step 2: List the Pokemon
+    // Step 2: List the Pokémon
     window.txModal.transaction({
       title: 'Creating Listing',
-      message: 'Listing your Pokemon on the marketplace...',
+      message: 'Listing your Pokémon on the marketplace...',
       subtitle: 'Confirm the listing transaction in your wallet.'
     });
 
@@ -261,7 +294,7 @@ async function handleSell(uniqueId, name, pokemonId, image, rarity) {
   } catch (err) {
     console.error('Sell failed:', err);
     
-    let errorMessage = 'Failed to list Pokemon for sale.';
+    let errorMessage = 'Failed to list Pokémon for sale.';
     if (err?.reason) errorMessage = err.reason;
     else if (err?.message) errorMessage = err.message;
     if (err?.code === 4001 || err?.code === 'ACTION_REJECTED') {
@@ -318,7 +351,6 @@ async function fetchOwnedTokens(provider, nft, addr) {
   return [...owned].map(Number);
 }
 
-// ===== IMPROVED: Better error handling and loading states WITH DEDUPLICATION =====
 async function renderCollection() {
   const grid = document.getElementById('allCollectionGrid');
   const totalEl = document.getElementById('totalPokemon');
@@ -326,14 +358,12 @@ async function renderCollection() {
   const emptyState = document.getElementById('emptyState');
   const loadingEl = document.getElementById('collectionLoading');
 
-  // ADD: Deduplication tracking
   const renderedTokenIds = new Set();
   
-  // Show loading state
   if (loadingEl) loadingEl.style.display = 'block';
   if (grid) {
     grid.style.display = 'none';
-    grid.innerHTML = ''; // Clear immediately to prevent duplicates
+    grid.innerHTML = '';
   }
   
   const provider = await safeGetProvider();
@@ -384,14 +414,11 @@ async function renderCollection() {
       return;
     }
 
-    // Show grid and hide loading
     if (loadingEl) loadingEl.style.display = 'none';
     if (grid) grid.style.display = 'grid';
     if (emptyState) emptyState.style.display = 'none';
 
-    // Process tokens sequentially to avoid race conditions
     for (const uniqueId of ids) {
-      // Skip if already rendered
       if (renderedTokenIds.has(uniqueId)) {
         console.log(`⚠️ Skipping duplicate token #${uniqueId}`);
         continue;
@@ -399,21 +426,16 @@ async function renderCollection() {
       renderedTokenIds.add(uniqueId);
       
       try {
-        // Get NFT metadata from contract
         const meta = await resolveMetadata(nft, uniqueId);
         if (!meta) {
           console.warn(`No metadata found for token #${uniqueId}`);
           continue;
         }
         
-        console.log('NFT metadata for #' + uniqueId + ':', meta);
-        
-        // Extract basic info from NFT metadata
         let name = meta.name || `Token ${uniqueId}`;
         let image = meta.image ? ipfsToHttp(meta.image) : '';
         let rarity = 'Common';
         
-        // Get rarity from attributes
         if (meta.attributes && Array.isArray(meta.attributes)) {
           const rarityAttr = meta.attributes.find(a => 
             a.trait_type?.toLowerCase() === 'rarity'
@@ -423,56 +445,47 @@ async function renderCollection() {
           }
         }
         
-        // Now fetch additional data from PokeAPI using the pokemon name
-        let pokemonId = uniqueId; // fallback
+        let pokemonId = uniqueId;
         let types = [];
-        let abilities = '';
+        let abilities = [];
+        let description = 'A mysterious Pokémon with unknown abilities.';
         
         const pokeData = await fetchPokeAPIData(name);
         if (pokeData) {
-          console.log('PokeAPI data for ' + name + ':', pokeData);
-          
-          // Get Pokemon ID from PokeAPI
           pokemonId = pokeData.id;
           
-          // Get types from PokeAPI
           if (pokeData.types && Array.isArray(pokeData.types)) {
             types = pokeData.types.map(t => t.type.name);
           }
           
-          // Get abilities from PokeAPI
           if (pokeData.abilities && Array.isArray(pokeData.abilities)) {
-            const abilityNames = pokeData.abilities
-              .slice(0, 3)
-              .map(a => a.ability?.name || '')
-              .filter(Boolean);
-            if (abilityNames.length > 0) {
-              abilities = `Abilities: ${abilityNames.join(', ')}`;
-            }
+            abilities = pokeData.abilities.slice(0, 3).map(a => ({
+              name: a.ability?.name || '',
+              isHidden: a.is_hidden
+            })).filter(a => a.name);
           }
           
-          // Capitalize name properly
           name = name.charAt(0).toUpperCase() + name.slice(1);
         }
         
-        console.log('✅ Final card data:', { 
+        // Fetch description
+        description = await fetchPokemonDescription(name);
+        
+        const card = makeCard({ 
           uniqueId, 
           pokemonId, 
           name, 
+          image, 
           rarity, 
           types, 
-          abilities 
+          abilities,
+          description 
         });
         
-        const card = makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities });
-        
-        // Double-check token isn't already in DOM before adding
         if (grid && !grid.querySelector(`[data-token-id="${uniqueId}"]`)) {
           grid.appendChild(card);
           total++;
           if (['rare','epic','legendary'].includes(rarity.toLowerCase())) rareCount++;
-        } else {
-          console.log(`⚠️ DOM already contains token #${uniqueId}, skipping`);
         }
         
       } catch (tokenError) {
@@ -480,7 +493,6 @@ async function renderCollection() {
       }
     }
 
-    // Update counters
     if (totalEl) totalEl.textContent = total;
     if (rareEl) rareEl.textContent = rareCount;
     
@@ -489,6 +501,30 @@ async function renderCollection() {
     if (loadingEl) loadingEl.style.display = 'none';
     if (emptyState) emptyState.style.display = 'block';
     window.txModal?.error('Collection Error', 'Failed to load your collection. Please try again.');
+  }
+}
+// ADD description fetcher (same as marketplace)
+async function fetchPokemonDescription(pokemonName) {
+  const cacheKey = pokemonName.toLowerCase();
+  
+  try {
+    const speciesRes = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${cacheKey}`);
+    if (!speciesRes.ok) return "A mysterious Pokémon with unknown abilities.";
+    
+    const speciesData = await speciesRes.json();
+    
+    const flavorText = speciesData.flavor_text_entries?.find(
+      entry => entry.language.name === 'en'
+    );
+    
+    const description = flavorText 
+      ? flavorText.flavor_text.replace(/\n|\f/g, ' ') 
+      : "A mysterious Pokémon with unknown abilities.";
+    
+    return description;
+  } catch (e) {
+    console.warn(`Failed to fetch description for ${pokemonName}:`, e);
+    return "A mysterious Pokémon with unknown abilities.";
   }
 }
 

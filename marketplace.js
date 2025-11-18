@@ -195,74 +195,157 @@ document.addEventListener('DOMContentLoaded', () => {
     items.forEach(p => marketGrid.appendChild(makeOfficialCard(p)));
   }
 
-  function makeOfficialCard(p) {
-    const card = document.createElement('div');
-    const rarityClass = rarityClassLabel(p.rarity);
-    card.className = `market-card ${rarityClass}`;
+  async function fetchPokemonDescription(pokemonName) {
+  const cacheKey = pokemonName.toLowerCase() + '_desc';
+  if (pokeCache.has(cacheKey)) {
+    return pokeCache.get(cacheKey);
+  }
 
-    const inner = document.createElement('div');
-    inner.className = 'card-inner';
+  try {
+    const speciesRes = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${pokemonName.toLowerCase()}`);
+    if (!speciesRes.ok) return "A mysterious Pokémon with unknown abilities.";
+    
+    const speciesData = await speciesRes.json();
+    
+    const flavorText = speciesData.flavor_text_entries?.find(
+      entry => entry.language.name === 'en'
+    );
+    
+    const description = flavorText 
+      ? flavorText.flavor_text.replace(/\n|\f/g, ' ') 
+      : "A mysterious Pokémon with unknown abilities.";
+    
+    pokeCache.set(cacheKey, description);
+    return description;
+  } catch (e) {
+    console.warn(`Failed to fetch description for ${pokemonName}:`, e);
+    return "A mysterious Pokémon with unknown abilities.";
+  }
+}
 
-    const art = document.createElement('div');
-    art.className = 'art';
-    const img = document.createElement('img');
-    img.src = p.sprites?.other?.['official-artwork']?.front_default || p.sprites?.front_default || '';
-    img.alt = p.name || '';
-    art.appendChild(img);
+async function showBuyModal(pokemon) {
+  const confirmed = await window.txModal.confirm({
+    title: 'Buy Pokémon',
+    message: `Confirm purchase of this Pokémon?`,
+    details: [
+      { label: 'Pokémon', value: `#${pokemon.id} ${pokemon.name}` },
+      { label: 'Rarity', value: pokemon.rarity },
+      { label: 'Price', value: `${pokemon.price} PKCN`, highlight: true }
+    ],
+    confirmText: 'Buy Now',
+    cancelText: 'Cancel'
+  });
 
-    const nameEl = document.createElement('h4');
-    nameEl.className = 'name';
-    nameEl.textContent = `#${p.id} ${p.name}`;
+  if (confirmed) {
+    // Reconstruct full pokemon object for buyPokemonOnChain
+    const fullPokemon = pokeCache.get(pokemon.id);
+    if (fullPokemon) {
+      await buyPokemonOnChain(fullPokemon);
+    }
+  }
+}
 
-    const typesWrap = document.createElement('div');
-    typesWrap.className = 'types';
-    (p.types || []).forEach(t => {
-      const tb = document.createElement('span');
-      tb.className = 'type-badge';
-      tb.textContent = t.type.name;
-      typesWrap.appendChild(tb);
+function makeOfficialCard(p) {
+  const card = document.createElement('div');
+  const rarityClass = rarityClassLabel(p.rarity);
+  card.className = `market-card ${rarityClass}`;
+  
+  // Make card clickable - attach pokemon data
+  card.dataset.pokemon = JSON.stringify({
+    id: p.id,
+    name: p.name,
+    rarity: p.rarity,
+    price: p.price,
+    sprites: p.sprites
+  });
+  
+  // Click handler for entire card
+  card.addEventListener('click', () => {
+    const pokemonData = JSON.parse(card.dataset.pokemon);
+    showBuyModal(pokemonData);
+  });
+
+  const inner = document.createElement('div');
+  inner.className = 'card-inner';
+
+  // Supply Badge - Upper Right
+  const supplyBadge = document.createElement('div');
+  supplyBadge.className = 'supply-badge';
+  supplyBadge.textContent = '...';
+  
+  // Update supply
+  fetchRemainingSupplyForRarity(p.rarity)
+    .then(n => { 
+      supplyBadge.textContent = (typeof n === 'number') ? `${n} LEFT` : '—'; 
+    })
+    .catch(() => { 
+      supplyBadge.textContent = '—'; 
     });
 
-    const abil = document.createElement('div');
-    abil.className = 'abilities';
-    abil.textContent = 'Abilities: ' + (p.abilities?.map(a => a.ability?.name || a.name).slice(0, 3).join(', ') || '—');
+  // Art section
+  const art = document.createElement('div');
+  art.className = 'art';
+  const img = document.createElement('img');
+  img.src = p.sprites?.other?.['official-artwork']?.front_default || p.sprites?.front_default || '';
+  img.alt = p.name || '';
+  art.appendChild(img);
 
-    const bottom = document.createElement('div');
-    bottom.className = 'bottom-row';
-    const price = document.createElement('div');
-    price.className = 'price-pill';
-    price.textContent = `${p.price} PKCN`;
-    const supplySpan = document.createElement('div');
-    supplySpan.className = 'supply-pill';
-    supplySpan.textContent = '… left';
-    supplySpan.style.fontSize = '11px';
-    supplySpan.style.marginLeft = '8px';
-    bottom.appendChild(price);
-    bottom.appendChild(supplySpan);
+  // Pokemon name with ID
+  const nameEl = document.createElement('h4');
+  nameEl.className = 'name';
+  nameEl.textContent = `#${p.id} ${p.name}`;
 
-    const actions = document.createElement('div');
-    actions.className = 'actions';
-    const buyBtn = document.createElement('button');
-    buyBtn.className = 'btn-primary-action';
-    buyBtn.textContent = 'Buy';
-    buyBtn.onclick = () => buyPokemonOnChain(p);
-    actions.appendChild(buyBtn);
+  // Types
+  const typesWrap = document.createElement('div');
+  typesWrap.className = 'types';
+  (p.types || []).forEach(t => {
+    const tb = document.createElement('span');
+    tb.className = 'type-badge';
+    tb.textContent = t.type.name.toUpperCase();
+    typesWrap.appendChild(tb);
+  });
 
-    inner.appendChild(art);
-    inner.appendChild(nameEl);
-    inner.appendChild(typesWrap);
-    inner.appendChild(abil);
-    inner.appendChild(bottom);
-    inner.appendChild(actions);
+  // Abilities
+  const abil = document.createElement('div');
+  abil.className = 'abilities';
+  const abilityNames = (p.abilities?.map(a => a.ability?.name || a.name).slice(0, 3) || []);
+  abil.textContent = abilityNames.length > 0 ? `Abilities: ${abilityNames.join(', ')}` : 'Abilities: Unknown';
 
-    card.appendChild(inner);
+  // Description (fetch from PokeAPI)
+  const descriptionDiv = document.createElement('div');
+  descriptionDiv.className = 'pokemon-description';
+  descriptionDiv.textContent = 'Loading description...';
+  
+  // Fetch description asynchronously
+  fetchPokemonDescription(p.name)
+    .then(desc => {
+      descriptionDiv.textContent = desc;
+    })
+    .catch(() => {
+      descriptionDiv.textContent = 'A mysterious Pokémon with unknown abilities.';
+    });
 
-    fetchRemainingSupplyForRarity(p.rarity)
-      .then(n => { supplySpan.textContent = (typeof n === 'number') ? `${n} left` : '—'; })
-      .catch(() => { supplySpan.textContent = '—'; });
+  // Price display at bottom
+  const priceDiv = document.createElement('div');
+  priceDiv.className = 'price-display';
+  const pricePill = document.createElement('div');
+  pricePill.className = 'price-pill';
+  pricePill.textContent = `${p.price} PKCN`;
+  priceDiv.appendChild(pricePill);
 
-    return card;
-  }
+  // Build card
+  inner.appendChild(art);
+  inner.appendChild(nameEl);
+  inner.appendChild(typesWrap);
+  inner.appendChild(abil);
+  inner.appendChild(descriptionDiv);
+  inner.appendChild(priceDiv);
+  
+  card.appendChild(supplyBadge);
+  card.appendChild(inner);
+  
+  return card;
+}
 
   function assertConfig() {
     if (!window.CONTRACTS || !window.ABIS) throw new Error('Missing config.js (CONTRACTS/ABIS)');
@@ -600,123 +683,193 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function makeListingCard(listing) {
-    let nameText = `Token #${listing.tokenId}`;
-    let rarity = 'Common';
-    let pokemonId = listing.tokenId;
-    let imageUrl = 'images/pokeball.png';
+  let nameText = `Token #${listing.tokenId}`;
+  let rarity = 'Common';
+  let pokemonId = listing.tokenId;
+  let imageUrl = 'images/pokeball.png';
+  let types = [];
+  let abilities = '';
+  let description = 'A mysterious Pokémon with unknown abilities.';
 
-    try {
-      assertConfig();
-      await window.wallet.ensureProvider();
-      const provider = await window.wallet.getProvider();
-      const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT_ADDRESS, window.ABIS.POKEMON_NFT, provider);
-      
-      // Get tokenURI
-      const uri = await nft.tokenURI(listing.tokenId);
-      console.log(`Token #${listing.tokenId} URI:`, uri);
-      
-      const meta = await parseTokenURI(uri);
-      if (meta) {
-        if (meta.image) imageUrl = ipfsToHttp(meta.image);
-        if (meta.name) nameText = meta.name.charAt(0).toUpperCase() + meta.name.slice(1);
-        
-        // Get Pokemon ID from PokeAPI
-        try {
-          const pokeRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${meta.name.toLowerCase()}`);
-          if (pokeRes.ok) {
-            const pokeData = await pokeRes.json();
-            pokemonId = pokeData.id;
-          }
-        } catch (e) {
-          console.warn(`⚠️ Couldn't fetch PokeAPI data for ${meta.name}`);
-        }
-        
-        // Extract rarity from attributes
-        if (meta.attributes && Array.isArray(meta.attributes)) {
-          const rarityAttr = meta.attributes.find(a => 
-            a.trait_type?.toLowerCase() === 'rarity'
-          );
-          if (rarityAttr?.value) rarity = rarityAttr.value;
-        }
-      }
-    } catch (e) {
-      console.error(`Failed to load metadata for token #${listing.tokenId}:`, e);
-    }
-
-    // Apply rarity class to card
-    const rarityClass = rarityClassLabel(rarity);
-    const card = document.createElement('div');
-    card.className = `market-card listed ${rarityClass}`;
-    card.dataset.listingId = listing.listingId;
-
-    const inner = document.createElement('div');
-    inner.className = 'card-inner';
-
-    const art = document.createElement('div');
-    art.className = 'art';
-    const img = document.createElement('img');
-    img.src = imageUrl;
-    img.alt = nameText;
-    art.appendChild(img);
-
-    const nameEl = document.createElement('h4');
-    nameEl.className = 'name';
-    nameEl.textContent = `#${pokemonId} ${nameText}`;
-
-    const typesWrap = document.createElement('div');
-    typesWrap.className = 'types';
-    const badge = document.createElement('span');
-    badge.className = 'type-badge';
-    badge.textContent = rarity;
-    typesWrap.appendChild(badge);
-
-    const currentUser = window.wallet?.getAccount?.()?.toLowerCase();
-    const isOwner = currentUser === listing.seller.toLowerCase();
-
-    const ownerDiv = document.createElement('div');
-    ownerDiv.className = `owner-badge ${isOwner ? 'self' : ''}`;
-    ownerDiv.textContent = isOwner ? 'Your Listing' : `Seller: ${shortAddress(listing.seller)}`;
-
-    const abilities = document.createElement('div');
-    abilities.className = 'abilities';
-    abilities.textContent = `NFT Token #${listing.tokenId}`;
-
-    const bottom = document.createElement('div');
-    bottom.className = 'bottom-row';
-    const priceDiv = document.createElement('div');
-    priceDiv.className = 'price-pill';
-    priceDiv.textContent = formatPrice(listing.price);
-    bottom.appendChild(priceDiv);
-
-    const actions = document.createElement('div');
-    actions.className = 'actions';
-
-    if (isOwner) {
-      const delistBtn = document.createElement('button');
-      delistBtn.className = 'btn-secondary-action';
-      delistBtn.textContent = 'Cancel Listing';
-      delistBtn.onclick = () => delistPokemon(listing.listingId, nameText, pokemonId);
-      actions.appendChild(delistBtn);
-    } else {
-      const buyBtn = document.createElement('button');
-      buyBtn.className = 'btn-primary-action';
-      buyBtn.textContent = 'Buy Now';
-      buyBtn.onclick = () => buyListedOnChain(listing.listingId, listing.price, nameText, pokemonId, listing.seller);
-      actions.appendChild(buyBtn);
-    }
-
-    inner.appendChild(art);
-    inner.appendChild(nameEl);
-    inner.appendChild(typesWrap);
-    inner.appendChild(ownerDiv);
-    inner.appendChild(abilities);
-    inner.appendChild(bottom);
-    inner.appendChild(actions);
-    card.appendChild(inner);
+  try {
+    assertConfig();
+    await window.wallet.ensureProvider();
+    const provider = await window.wallet.getProvider();
+    const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT_ADDRESS, window.ABIS.POKEMON_NFT, provider);
     
-    return card;
+    const uri = await nft.tokenURI(listing.tokenId);
+    const meta = await parseTokenURI(uri);
+    
+    if (meta) {
+      if (meta.image) imageUrl = ipfsToHttp(meta.image);
+      if (meta.name) nameText = meta.name.charAt(0).toUpperCase() + meta.name.slice(1);
+      
+      // Get Pokemon data from PokeAPI
+      try {
+        const pokeRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${meta.name.toLowerCase()}`);
+        if (pokeRes.ok) {
+          const pokeData = await pokeRes.json();
+          pokemonId = pokeData.id;
+          types = pokeData.types?.map(t => t.type.name) || [];
+          const abilityNames = pokeData.abilities?.slice(0, 3).map(a => a.ability.name) || [];
+          abilities = abilityNames.length > 0 ? `Abilities: ${abilityNames.join(', ')}` : '';
+        }
+        
+        // Fetch description
+        const speciesRes = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${meta.name.toLowerCase()}`);
+        if (speciesRes.ok) {
+          const speciesData = await speciesRes.json();
+          const flavorText = speciesData.flavor_text_entries?.find(e => e.language.name === 'en');
+          if (flavorText) {
+            description = flavorText.flavor_text.replace(/\n|\f/g, ' ');
+          }
+        }
+      } catch (e) {
+        console.warn(`Couldn't fetch PokeAPI data for ${meta.name}`);
+      }
+      
+      // Extract rarity from attributes
+      if (meta.attributes && Array.isArray(meta.attributes)) {
+        const rarityAttr = meta.attributes.find(a => 
+          a.trait_type?.toLowerCase() === 'rarity'
+        );
+        if (rarityAttr?.value) rarity = rarityAttr.value;
+      }
+    }
+  } catch (e) {
+    console.error(`Failed to load metadata for token #${listing.tokenId}:`, e);
   }
 
+  const rarityClass = rarityClassLabel(rarity);
+  const card = document.createElement('div');
+  card.className = `market-card listed ${rarityClass}`;
+  card.dataset.listingId = listing.listingId;
+  
+  // Make card clickable
+  const currentUser = window.wallet?.getAccount?.()?.toLowerCase();
+  const isOwner = currentUser === listing.seller.toLowerCase();
+  
+  card.addEventListener('click', () => {
+    showPlayerListingModal(listing, nameText, pokemonId, rarity, isOwner);
+  });
+
+  const inner = document.createElement('div');
+  inner.className = 'card-inner';
+
+  // NFT ID Badge - Upper Right
+  const nftIdBadge = document.createElement('div');
+  nftIdBadge.className = 'nft-id-badge';
+  nftIdBadge.textContent = `#${listing.tokenId}`;
+
+  // Art
+  const art = document.createElement('div');
+  art.className = 'art';
+  const img = document.createElement('img');
+  img.src = imageUrl;
+  img.alt = nameText;
+  art.appendChild(img);
+
+  // Name
+  const nameEl = document.createElement('h4');
+  nameEl.className = 'name';
+  nameEl.textContent = `#${pokemonId} ${nameText}`;
+
+  // Types
+  const typesWrap = document.createElement('div');
+  typesWrap.className = 'types';
+  
+  if (types.length > 0) {
+    types.forEach(type => {
+      const badge = document.createElement('span');
+      badge.className = 'type-badge';
+      badge.textContent = type.toUpperCase();
+      typesWrap.appendChild(badge);
+    });
+  } else {
+    const badge = document.createElement('span');
+    badge.className = 'type-badge';
+    badge.textContent = rarity.toUpperCase();
+    typesWrap.appendChild(badge);
+  }
+
+  // Abilities
+  const abilitiesDiv = document.createElement('div');
+  abilitiesDiv.className = 'abilities';
+  abilitiesDiv.textContent = abilities || `NFT Token #${listing.tokenId}`;
+
+  // Description
+  const descriptionDiv = document.createElement('div');
+  descriptionDiv.className = 'pokemon-description';
+  descriptionDiv.textContent = description;
+
+  // Owner badge
+
+  // Price
+  const priceDiv = document.createElement('div');
+  priceDiv.className = 'price-display';
+  const pricePill = document.createElement('div');
+  pricePill.className = 'price-pill';
+  pricePill.textContent = formatPrice(listing.price);
+  priceDiv.appendChild(pricePill);
+
+  // Build card
+  inner.appendChild(art);
+  inner.appendChild(nameEl);
+  inner.appendChild(typesWrap);
+  inner.appendChild(abilitiesDiv);
+  inner.appendChild(descriptionDiv);
+  inner.appendChild(priceDiv);
+  
+  card.appendChild(nftIdBadge);
+  card.appendChild(inner);
+  
+  return card;
+}
+
+async function showPlayerListingModal(listing, pokemonName, pokemonId, rarity, isOwner) {
+  if (isOwner) {
+    // Show cancel listing modal
+    const confirmed = await window.txModal.confirm({
+      title: 'Cancel Listing',
+      message: `Remove your Pokémon from the marketplace?`,
+      details: [
+        { label: 'Pokémon', value: `#${pokemonId} ${pokemonName}` },
+        { label: 'Rarity', value: rarity },
+        { label: 'NFT ID', value: `#${listing.tokenId}` },
+        { label: 'Listing ID', value: `#${listing.listingId}` }
+      ],
+      confirmText: 'Cancel Listing',
+      cancelText: 'Keep Listed',
+      dangerous: true
+    });
+    
+    if (confirmed) {
+      await delistPokemon(listing.listingId, pokemonName, pokemonId);
+    }
+  } else {
+    // Show buy modal with seller info
+    const priceBig = BigInt(listing.price.toString());
+    const humanPrice = ethers.formatUnits(priceBig, TOKEN_DECIMALS);
+    
+    const confirmed = await window.txModal.confirm({
+      title: 'Buy Listed Pokémon',
+      message: `Purchase this Pokémon from another player?`,
+      details: [
+        { label: 'Pokémon', value: `#${pokemonId} ${pokemonName}` },
+        { label: 'Rarity', value: rarity },
+        { label: 'NFT ID', value: `#${listing.tokenId}` },
+        { label: 'Seller', value: shortAddress(listing.seller) },
+        { label: 'Price', value: `${humanPrice} PKCN`, highlight: true }
+      ],
+      confirmText: 'Buy Now',
+      cancelText: 'Cancel'
+    });
+    
+    if (confirmed) {
+      await buyListedOnChain(listing.listingId, listing.price, pokemonName, pokemonId, listing.seller);
+    }
+  }
+}
   // ===== Improved buyListedOnChain with complete removal =====
   async function buyListedOnChain(listingId, priceRaw, pokemonName, pokemonId, seller) {
     // CRITICAL: Prevent double-purchasing the same listing

@@ -6,8 +6,8 @@ const tournamentState = {
     isStarting: false
 };
 
-// Cache for PokeAPI descriptions
-const descriptionCache = new Map();
+// Cache for PokeAPI data
+const pokeApiCache = new Map();
 
 // Tournament DOM Elements
 const elements = {
@@ -22,16 +22,14 @@ const elements = {
     startError: document.getElementById('startError'),
     opponentSelect: document.getElementById('opponentCount'),
     difficultySelect: document.getElementById('difficulty'),
-    overlay: document.getElementById('transitionOverlay'),
-    countdown: document.getElementById('countdown'),
     status: document.getElementById('connectionStatus')
 };
 
 // Fetch PokeAPI description
 async function fetchPokemonDescription(pokemonName) {
     const cacheKey = pokemonName.toLowerCase();
-    if (descriptionCache.has(cacheKey)) {
-        return descriptionCache.get(cacheKey);
+    if (pokeApiCache.has(cacheKey + '_desc')) {
+        return pokeApiCache.get(cacheKey + '_desc');
     }
 
     try {
@@ -40,7 +38,6 @@ async function fetchPokemonDescription(pokemonName) {
         
         const speciesData = await speciesRes.json();
         
-        // Find English flavor text
         const flavorText = speciesData.flavor_text_entries?.find(
             entry => entry.language.name === 'en'
         );
@@ -49,11 +46,45 @@ async function fetchPokemonDescription(pokemonName) {
             ? flavorText.flavor_text.replace(/\n|\f/g, ' ') 
             : "A mysterious Pokémon with unknown abilities.";
         
-        descriptionCache.set(cacheKey, description);
+        pokeApiCache.set(cacheKey + '_desc', description);
         return description;
     } catch (e) {
         console.warn(`Failed to fetch description for ${pokemonName}:`, e);
         return "A mysterious Pokémon with unknown abilities.";
+    }
+}
+
+// Fetch comprehensive PokeAPI data
+async function fetchPokeAPIData(pokemonName) {
+    const cacheKey = pokemonName.toLowerCase();
+    if (pokeApiCache.has(cacheKey)) {
+        return pokeApiCache.get(cacheKey);
+    }
+
+    try {
+        const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${cacheKey}`);
+        if (!res.ok) return null;
+        
+        const data = await res.json();
+        
+        const abilities = data.abilities?.map(ab => ({
+            name: ab.ability.name,
+            isHidden: ab.is_hidden
+        })) || [];
+        
+        const types = data.types?.map(t => t.type.name) || [];
+        
+        const result = {
+            id: data.id,
+            abilities,
+            types
+        };
+        
+        pokeApiCache.set(cacheKey, result);
+        return result;
+    } catch (e) {
+        console.warn(`Failed to fetch PokeAPI data for ${pokemonName}:`, e);
+        return null;
     }
 }
 
@@ -111,12 +142,14 @@ async function loadTournamentPokemon() {
                 let rarity = 'Common';
                 let pokemonId = tokenId;
                 let types = [];
+                let abilities = [];
 
                 // Get Pokémon data from PokeAPI
                 const pokeData = await fetchPokeAPIData(name);
                 if (pokeData) {
                     pokemonId = pokeData.id;
-                    types = pokeData.types?.map(t => t.type.name) || [];
+                    types = pokeData.types;
+                    abilities = pokeData.abilities;
                 }
 
                 // Extract rarity
@@ -139,6 +172,7 @@ async function loadTournamentPokemon() {
                     image,
                     rarity,
                     types,
+                    abilities,
                     description,
                     tokenId
                 });
@@ -163,7 +197,7 @@ async function loadTournamentPokemon() {
 }
 
 // Create a selectable Pokémon card for tournament
-function makeSelectableCard({ uniqueId, pokemonId, name, image, rarity, types, description, tokenId }) {
+function makeSelectableCard({ uniqueId, pokemonId, name, image, rarity, types, abilities, description, tokenId }) {
     const card = document.createElement('div');
     card.className = `market-card ${(rarity || 'common').toLowerCase()} tournament-card`;
     card.dataset.tokenId = uniqueId;
@@ -173,28 +207,32 @@ function makeSelectableCard({ uniqueId, pokemonId, name, image, rarity, types, d
     const inner = document.createElement('div');
     inner.className = 'card-inner';
 
-    // Unique ID Badge
-    const uniqueIdBadge = document.createElement('div');
-    uniqueIdBadge.className = 'unique-id-badge';
-    uniqueIdBadge.textContent = `#${uniqueId}`;
-
-    // Art
+    // Pokemon Image
     const art = document.createElement('div');
-    art.className = 'art';
+    art.className = 'pokemon-image';
     const img = document.createElement('img');
     img.src = image || 'images/pokeball.png';
     img.alt = name || '';
     img.onerror = () => { img.src = 'images/pokeball.png'; };
     art.appendChild(img);
 
-    // Name
-    const h4 = document.createElement('h4');
-    h4.className = 'name';
-    h4.textContent = `#${pokemonId} ${name}`;
+    // Pokemon Info Container
+    const infoContainer = document.createElement('div');
+    infoContainer.className = 'pokemon-info';
+
+    // Name with ID
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'pokemon-name';
+    nameDiv.textContent = `#${pokemonId} ${name}`;
+
+    // Token ID Badge (upper right)
+    const tokenBadge = document.createElement('div');
+    tokenBadge.className = 'token-badge';
+    tokenBadge.textContent = `#${uniqueId}`;
 
     // Types
     const typesDiv = document.createElement('div');
-    typesDiv.className = 'types';
+    typesDiv.className = 'pokemon-types';
     if (types && types.length > 0) {
         types.forEach(type => {
             const badge = document.createElement('span');
@@ -202,6 +240,16 @@ function makeSelectableCard({ uniqueId, pokemonId, name, image, rarity, types, d
             badge.textContent = type.toUpperCase();
             typesDiv.appendChild(badge);
         });
+    }
+
+    // Abilities - NEW FORMAT (single line with comma separation)
+    const abilitiesDiv = document.createElement('div');
+    abilitiesDiv.className = 'pokemon-abilities';
+    if (abilities && abilities.length > 0) {
+        const abilityNames = abilities.slice(0, 3).map(ab => ab.name.replace(/-/g, ' ')).join(', ');
+        abilitiesDiv.textContent = `Abilities: ${abilityNames}`;
+    } else {
+        abilitiesDiv.textContent = 'Abilities: Unknown';
     }
 
     // Description
@@ -214,12 +262,15 @@ function makeSelectableCard({ uniqueId, pokemonId, name, image, rarity, types, d
     selectIndicator.className = 'selection-indicator';
     selectIndicator.innerHTML = '✓ SELECTED';
     
+    infoContainer.appendChild(nameDiv);
+    infoContainer.appendChild(typesDiv);
+    infoContainer.appendChild(abilitiesDiv);
+    infoContainer.appendChild(descriptionDiv);
+    
     inner.appendChild(art);
-    inner.appendChild(h4);
-    inner.appendChild(typesDiv);
-    inner.appendChild(descriptionDiv);
-    inner.appendChild(selectIndicator);
-    card.appendChild(uniqueIdBadge);
+    inner.appendChild(infoContainer);
+    card.appendChild(tokenBadge);
+    card.appendChild(selectIndicator);
     card.appendChild(inner);
 
     // Click handler for selection
@@ -230,6 +281,7 @@ function makeSelectableCard({ uniqueId, pokemonId, name, image, rarity, types, d
         image,
         rarity,
         types,
+        abilities,
         description,
         cardElement: card
     }));
@@ -259,7 +311,7 @@ function selectPokemonForTournament(pokemon) {
     elements.startError.style.display = 'none';
 }
 
-// Start tournament with transition
+// Start tournament (direct battle initiation)
 async function startTournament() {
     if (!tournamentState.selectedPokemon || tournamentState.isStarting) {
         elements.startError.style.display = 'block';
@@ -274,62 +326,20 @@ async function startTournament() {
     tournamentState.opponentCount = parseInt(elements.opponentSelect.value);
     tournamentState.difficulty = elements.difficultySelect.value;
 
-    // Show transition
-    showBattleTransition();
+    // Directly proceed to battle
+    initiateTournamentBattle();
 }
 
-// Show VS transition with countdown
-function showBattleTransition() {
-    const overlay = elements.overlay;
-    const countdown = elements.countdown;
-    const playerImg = document.getElementById('playerPokemonBattle');
-    
-    // Set player Pokemon image
-    playerImg.src = tournamentState.selectedPokemon.image || 'images/pokeball.png';
-    
-    // Random AI trainer name
-    const aiNames = ['GARY OAK', 'LANCE', 'CYNTHIA', 'RED', 'BLUE', 'STEVEN', 'IRIS'];
-    document.getElementById('aiTrainerName').textContent = 
-        aiNames[Math.floor(Math.random() * aiNames.length)];
-    
-    // Show overlay
-    overlay.style.display = 'flex';
-    
-    // Start countdown
-    let count = 3;
-    countdown.textContent = count;
-    countdown.style.fontSize = '6rem';
-    countdown.classList.remove('battle-glow');
-    
-    const countdownInterval = setInterval(() => {
-        count--;
-        if (count > 0) {
-            countdown.textContent = count;
-            countdown.classList.add('pulse');
-            setTimeout(() => countdown.classList.remove('pulse'), 500);
-        } else if (count === 0) {
-            countdown.textContent = 'BATTLE!';
-            countdown.style.fontSize = '4rem';
-            countdown.classList.add('battle-glow');
-        } else {
-            clearInterval(countdownInterval);
-            // Hide overlay and proceed to battle (Phase 2)
-            overlay.style.display = 'none';
-            initiateTournamentBattle();
-        }
-    }, 1000);
-}
-
-// Placeholder for Phase 2 battle initiation
+// Placeholder for battle initiation
 function initiateTournamentBattle() {
     console.log('🎉 TOURNAMENT STARTING!', tournamentState);
     console.log(`Your ${tournamentState.selectedPokemon.name} vs ${tournamentState.opponentCount} opponents on ${tournamentState.difficulty} difficulty`);
     
-    // For Phase 1, just show success message
+    // Show success message
     if (window.txModal) {
         window.txModal.success(
             'Tournament Started!',
-            `Your ${tournamentState.selectedPokemon.name} is ready to battle ${tournamentState.opponentCount} opponents on ${tournamentState.difficulty} difficulty. (Phase 2: Battle system coming soon!)`
+            `Your ${tournamentState.selectedPokemon.name} is ready to battle ${tournamentState.opponentCount} opponents on ${tournamentState.difficulty} difficulty.`
         );
     } else {
         alert(`Tournament Started! Your ${tournamentState.selectedPokemon.name} is ready to battle!`);
