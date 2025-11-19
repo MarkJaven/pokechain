@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PokéChain — Battle Arena</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="collection-marketplace.css" />
+  <link rel="stylesheet" href="tournament.css" />
+  <link rel="stylesheet" href="battle.css" />
+</head>
+
+<body>
+  <!-- Background Video -->
+  <video class="bg-video" autoplay muted loop playsinline>
+    <source src="bg.mp4" type="video/mp4">
+  </video>
+  <div class="bg-overlay"></div>
+
+  <!-- Transition Overlay -->
+  <div id="transitionOverlay" class="transition-overlay">
+    <div class="video-skip-hint">Preparing Battle Arena...</div>
+  </div>
+
+  <!-- Battle Loading Screen -->
+  <div id="battleLoadingScreen" class="battle-loading-screen">
+    <!-- Difficulty Badge (Top Right) -->
+    <div class="difficulty-badge">
+      <span id="difficultyDisplay">NORMAL</span>
+    </div>
+
+    <!-- All Participants Grid (LoL Style) -->
+    <div class="participants-container">
+      <div id="participantsGrid" class="participants-grid">
+        <!-- All pokemon cards (player + AI) will be inserted here -->
+      </div>
+    </div>
+
+    <!-- Loading Bar (Bottom) -->
+    <div class="loading-bar-container">
+      <div class="loading-bar-fill"></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="./config.js"></script>
+  <script src="./wallet.js"></script>
+  <script src="battle.js"></script>
+</body>
+</html>

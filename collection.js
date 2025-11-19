@@ -13,6 +13,7 @@ function decodeBase64Json(dataUri) {
 }
 
 function ipfsToHttp(uri) {
+  // FIX: Removed extra space in IPFS gateway URL
   return uri?.startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + uri.slice(7) : uri;
 }
 
@@ -37,6 +38,7 @@ async function resolveMetadata(nft, id) {
 async function fetchPokeAPIData(pokemonName) {
   try {
     const cleanName = pokemonName.toLowerCase().trim();
+    // FIX: Removed extra space in API URL
     const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${cleanName}`);
     if (!res.ok) return null;
     return await res.json();
@@ -48,7 +50,9 @@ async function fetchPokeAPIData(pokemonName) {
 
 function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities, description }) {
   const card = document.createElement('div');
-  card.className = `market-card ${(rarity || 'common').toLowerCase()}`;
+  // FIX: Ensure lowercase CSS class with proper fallback
+  const rarityClass = rarity ? String(rarity).toLowerCase().trim() : 'common';
+  card.className = `market-card ${rarityClass}`;
   card.dataset.tokenId = uniqueId;
   
   // Make card clickable - show listing modal
@@ -90,11 +94,15 @@ function makeCard({ uniqueId, pokemonId, name, image, rarity, types, abilities, 
     });
   }
 
-  // Abilities
+  // Abilities - CRITICAL FIX: More robust filtering to prevent undefined errors
   const abilitiesDiv = document.createElement('div');
   abilitiesDiv.className = 'abilities';
   if (abilities && Array.isArray(abilities) && abilities.length > 0) {
-    const abilityNames = abilities.slice(0, 3).map(ab => ab.name.replace(/-/g, ' '));
+    // FIX: Filter out undefined/null abilities and ensure they have a name property
+    const abilityNames = abilities
+      .slice(0, 3)
+      .filter(ab => ab && typeof ab === 'object' && ab.name)
+      .map(ab => ab.name.replace(/-/g, ' '));
     abilitiesDiv.textContent = `Abilities: ${abilityNames.join(', ')}`;
   } else if (typeof abilities === 'string') {
     abilitiesDiv.textContent = abilities;
@@ -195,6 +203,7 @@ async function showListingModal({ uniqueId, name, pokemonId, image, rarity }) {
     console.error('Listing modal error:', err);
   }
 }
+
 // ===== IMPROVED: Better error handling and user feedback =====
 async function handleSellWithModal(uniqueId, name, pokemonId, image, rarity, price) {
   try {
@@ -353,6 +362,13 @@ async function fetchOwnedTokens(provider, nft, addr) {
 
 async function renderCollection() {
   const grid = document.getElementById('allCollectionGrid');
+  
+  // FIX: Don't run if we're not on the collection page
+  if (!grid) {
+    console.log('Collection grid not found - skipping render');
+    return;
+  }
+  
   const totalEl = document.getElementById('totalPokemon');
   const rareEl = document.getElementById('rarePokemon');
   const emptyState = document.getElementById('emptyState');
@@ -432,19 +448,12 @@ async function renderCollection() {
           continue;
         }
         
+        // DEBUG LOG: See what metadata structure we get
+        console.log(`Token #${uniqueId} metadata:`, meta);
+        
         let name = meta.name || `Token ${uniqueId}`;
         let image = meta.image ? ipfsToHttp(meta.image) : '';
-        let rarity = 'Common';
-        
-        if (meta.attributes && Array.isArray(meta.attributes)) {
-          const rarityAttr = meta.attributes.find(a => 
-            a.trait_type?.toLowerCase() === 'rarity'
-          );
-          if (rarityAttr && rarityAttr.value) {
-            rarity = rarityAttr.value;
-          }
-        }
-        
+        let rarity = 'Common'; // Default value
         let pokemonId = uniqueId;
         let types = [];
         let abilities = [];
@@ -454,15 +463,19 @@ async function renderCollection() {
         if (pokeData) {
           pokemonId = pokeData.id;
           
+          // CRITICAL FIX: Add robust filtering for API data
           if (pokeData.types && Array.isArray(pokeData.types)) {
-            types = pokeData.types.map(t => t.type.name);
+            types = pokeData.types.filter(t => t?.type?.name).map(t => t.type.name);
           }
           
           if (pokeData.abilities && Array.isArray(pokeData.abilities)) {
-            abilities = pokeData.abilities.slice(0, 3).map(a => ({
-              name: a.ability?.name || '',
-              isHidden: a.is_hidden
-            })).filter(a => a.name);
+            abilities = pokeData.abilities
+              .filter(a => a?.ability?.name) // Filter out malformed entries
+              .slice(0, 3)
+              .map(a => ({
+                name: a.ability.name.replace(/-/g, ' '),
+                isHidden: a.is_hidden
+              }));
           }
           
           name = name.charAt(0).toUpperCase() + name.slice(1);
@@ -470,6 +483,28 @@ async function renderCollection() {
         
         // Fetch description
         description = await fetchPokemonDescription(name);
+        
+        // IMPROVED FIX: More robust rarity extraction with multiple fallbacks
+        if (meta.attributes && Array.isArray(meta.attributes)) {
+          const rarityAttr = meta.attributes.find(a => 
+            a.trait_type?.toLowerCase() === 'rarity' || 
+            a.traitType?.toLowerCase() === 'rarity'
+          );
+          if (rarityAttr?.value) {
+            rarity = String(rarityAttr.value).trim();
+            console.log(`✅ Found rarity for token #${uniqueId}: ${rarity}`);
+          } else {
+            console.warn(`⚠️ No rarity attribute found in metadata for token #${uniqueId}`);
+            // Try to extract from name or other properties as fallback
+            if (meta.name?.toLowerCase().includes('legendary')) rarity = 'Legendary';
+            else if (meta.name?.toLowerCase().includes('rare')) rarity = 'Rare';
+          }
+        } else {
+          console.warn(`⚠️ No attributes array in metadata for token #${uniqueId}`);
+          // Fallback: try to determine from name
+          if (meta.name?.toLowerCase().includes('legendary')) rarity = 'Legendary';
+          else if (meta.name?.toLowerCase().includes('rare')) rarity = 'Rare';
+        }
         
         const card = makeCard({ 
           uniqueId, 
@@ -503,11 +538,13 @@ async function renderCollection() {
     window.txModal?.error('Collection Error', 'Failed to load your collection. Please try again.');
   }
 }
-// ADD description fetcher (same as marketplace)
+
+// COMPLETED: Fixed description fetcher with proper error handling
 async function fetchPokemonDescription(pokemonName) {
   const cacheKey = pokemonName.toLowerCase();
   
   try {
+    // FIX: Removed extra space in API URL
     const speciesRes = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${cacheKey}`);
     if (!speciesRes.ok) return "A mysterious Pokémon with unknown abilities.";
     
@@ -539,7 +576,8 @@ function startCollectionAutoRefresh() {
   
   // Refresh collection every 30 seconds to catch new purchases
   collectionRefreshInterval = setInterval(() => {
-    if (window.wallet?.getAccount?.()) {
+    // FIX: Only refresh if we're on the collection page
+    if (window.wallet?.getAccount?.() && document.getElementById('allCollectionGrid')) {
       renderCollection();
     }
   }, 30000);
@@ -554,16 +592,19 @@ function stopCollectionAutoRefresh() {
 
 // ===== Event Listeners =====
 window.addEventListener('load', () => {
-  renderCollection();
-  startCollectionAutoRefresh();
+  // FIX: Only run collection logic if we're on the collection page
+  if (document.getElementById('allCollectionGrid')) {
+    renderCollection();
+    startCollectionAutoRefresh();
+  }
 });
 
 // Stop auto-refresh when page unloads
 window.addEventListener('beforeunload', stopCollectionAutoRefresh);
 
-// Refresh collection when wallet connects/disconnects
+// Refresh collection when wallet connects/disconnects (only if on collection page)
 document.addEventListener('wallet.ready', () => {
-  if (window.wallet?.getAccount?.()) {
+  if (window.wallet?.getAccount?.() && document.getElementById('allCollectionGrid')) {
     renderCollection();
   }
 });

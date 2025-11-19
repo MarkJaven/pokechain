@@ -330,26 +330,31 @@ async function startTournament() {
     initiateTournamentBattle();
 }
 
-// Placeholder for battle initiation
 function initiateTournamentBattle() {
-    console.log('🎉 TOURNAMENT STARTING!', tournamentState);
-    console.log(`Your ${tournamentState.selectedPokemon.name} vs ${tournamentState.opponentCount} opponents on ${tournamentState.difficulty} difficulty`);
+    // Store settings in state
+    tournamentState.opponentCount = parseInt(elements.opponentSelect.value);
+    tournamentState.difficulty = elements.difficultySelect.value;
     
-    // Show success message
-    if (window.txModal) {
-        window.txModal.success(
-            'Tournament Started!',
-            `Your ${tournamentState.selectedPokemon.name} is ready to battle ${tournamentState.opponentCount} opponents on ${tournamentState.difficulty} difficulty.`
-        );
-    } else {
-        alert(`Tournament Started! Your ${tournamentState.selectedPokemon.name} is ready to battle!`);
-    }
+    // Prepare tournament data for battle page
+    const tournamentData = {
+        ...tournamentState.selectedPokemon,
+        // Ensure image is HTTP URL (not IPFS)
+        image: tournamentState.selectedPokemon.image || 'images/pokeball.png'
+    };
     
-    // Reset state
+    // Create URL parameters
+    const params = new URLSearchParams({
+        pokemon: encodeURIComponent(JSON.stringify(tournamentData)),
+        opponents: tournamentState.opponentCount,
+        difficulty: tournamentState.difficulty
+    });
+    
+    // Reset state before redirect
     tournamentState.isStarting = false;
-    elements.startBtn.disabled = false;
+    
+    // Redirect to battle arena
+    window.location.href = `battle.html?${params.toString()}`;
 }
-
 // Initialize tournament page
 window.addEventListener('DOMContentLoaded', () => {
     // Wait for wallet to be ready
