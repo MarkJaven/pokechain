@@ -19,12 +19,13 @@ window.ABIS = {
     
     "function transferFrom(address from, address to, uint256 tokenId) public",
     "function safeTransferFrom(address from, address to, uint256 tokenId) public",
-    
+     "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)",
 
     "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
     "event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)",
     "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)",
     "event PokemonMinted(uint256 indexed tokenId, address indexed owner, string name, string rarity)"
+    
   ],
   
   MARKETPLACE: [

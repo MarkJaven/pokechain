@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PokéChain — Transaction History</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="collection-marketplace.css" />
+  <style>
+    .filter-btn {
+      background: rgba(0, 255, 157, 0.1);
+      border: 1px solid rgba(0, 255, 157, 0.3);
+      color: #00ff9d;
+      padding: 8px 16px;
+      border-radius: 8px;
+      margin: 0 4px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .filter-btn.active {
+      background: linear-gradient(135deg, #00ff9d, #00c474);
+      color: #000;
+      border-color: #00ff9d;
+    }
+    .tx-table {
+      font-size: 0.85rem;
+    }
+    .tx-table img {
+      width: 40px;
+      height: 40px;
+      object-fit: contain;
+    }
+    .status-badge {
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+    .status-success { background: rgba(0, 255, 157, 0.2); color: #00ff9d; }
+    .status-failed { background: rgba(255, 77, 77, 0.2); color: #ff4d4d; }
+    .status-pending { background: rgba(255, 215, 0, 0.2); color: #ffd700; }
+    
+    /* ✅ NEW: Highlight NFT ID column */
+    .nft-id-cell {
+      font-weight: 700;
+      color: #00ff9d;
+    }
+    
+    /* ✅ NEW: Type badges */
+    .type-badge {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .type-list { background: rgba(0, 157, 255, 0.2); color: #009dff; }
+    .type-delist { background: rgba(255, 157, 0, 0.2); color: #ff9d00; }
+    .type-purchase { background: rgba(0, 255, 157, 0.2); color: #00ff9d; }
+    .type-marketplace_purchase { background: rgba(157, 0, 255, 0.2); color: #9d00ff; }
+  </style>
+</head>
+
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-transparent px-4 py-3">
+    <a class="navbar-brand fs-3 fw-bold text-warning" href="index.html">Poké<span class="text-success">Chain</span></a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+      <ul class="navbar-nav gap-3 align-items-center">
+        <li class="nav-item"><a class="nav-link" href="index.html">Home</a></li>
+        <li class="nav-item"><a class="nav-link" href="marketplace.html">Marketplace</a></li>
+        <li class="nav-item"><a class="nav-link" href="collection.html">Collection</a></li>
+        <li class="nav-item"><a class="nav-link" href="tournament.html">Tournament</a></li>
+        <li class="nav-item"><a class="nav-link active" href="transaction-history.html">Transactions</a></li>
+        <li class="nav-item"><div id="pctBalance" class="small-muted px-2">—</div></li>
+        <li class="nav-item"><button id="walletDisplay" class="btn btn-sm btn-outline-light">Connect</button></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="container-fluid px-4 py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1 class="h2 mb-0">Transaction History</h1>
+      <button id="clearHistory" class="btn btn-sm btn-outline-danger">Clear History</button>
+    </div>
+
+    <div class="mb-4">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="buy">Buy</button>
+      <button class="filter-btn" data-filter="list">List</button> <!-- ✅ NEW -->
+      <button class="filter-btn" data-filter="delist">Delist</button>
+      <button class="filter-btn" data-filter="success">Success</button>
+      <button class="filter-btn" data-filter="failed">Failed</button>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table tx-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Pokémon</th>
+            <th>Amount</th>
+            <th>Gas Fee</th>
+            <th>NFT ID</th> <!-- ✅ Ensure this column exists -->
+            <th>From</th>
+            <th>To</th>
+            <th>Status</th>
+            <th>Time</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="txTableBody">
+          <tr><td colspan="10" class="text-center py-5">Loading transaction history...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+  <script src="./config.js"></script>
+  <script src="./wallet.js"></script>
+  <script src="transaction-modal.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <script>
+    // ===== SHARED UTILITY FUNCTIONS =====
+    function shortAddress(addr) {
+      try { return addr.slice(0, 6) + '...' + addr.slice(-4); } catch { return addr; }
+    }
+
+    function getExplorerLink(hash) {
+      const chainId = window.wallet?.getChainId?.() || '1';
+      const explorers = {
+        '1': `https://etherscan.io/tx/${hash}`,
+        '5': `https://goerli.etherscan.io/tx/${hash}`,
+        '137': `https://polygonscan.com/tx/${hash}`,
+        '80001': `https://mumbai.polygonscan.com/tx/${hash}`
+      };
+      return explorers[chainId] || `https://etherscan.io/tx/${hash}`;
+    }
+
+    function formatTime(timestamp) {
+      const now = Date.now();
+      const diff = now - timestamp;
+      const minutes = Math.floor(diff / 60000);
+      const hours = Math.floor(diff / 3600000);
+      const days = Math.floor(diff / 86400000);
+
+      if (days > 0) return `${days}d ago`;
+      if (hours > 0) return `${hours}h ago`;
+      if (minutes > 0) return `${minutes}m ago`;
+      return 'Just now';
+    }
+
+    // ===== UPDATED Transaction History Page Class =====
+    class TxHistoryPage {
+      constructor() {
+        this.key = 'pokechain_tx_history_v2';
+        this.currentFilter = 'all';
+        this.init();
+      }
+
+      load() {
+        try {
+          return JSON.parse(localStorage.getItem(this.key) || '[]');
+        } catch {
+          return [];
+        }
+      }
+
+      render(filter = 'all') {
+        const txs = this.load().reverse();
+        const filtered = this.filter(txs, filter);
+        const tbody = document.getElementById('txTableBody');
+        
+        if (filtered.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="10" class="text-center py-5">No transactions found</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = filtered.map(tx => `
+          <tr>
+            <td>${this.getTypeBadge(tx.type)}</td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                ${tx.details?.image ? `<img src="${tx.details.image}" alt="${tx.details.pokemonName || 'Unknown'}" class="rounded" />` : ''}
+                <div>
+                  <div>${tx.details.pokemonName || 'Unknown'}</div>
+                  <small class="text-muted">#${tx.details.pokemonId || '?'}</small>
+                </div>
+              </div>
+            </td>
+            <td>${tx.tokenAmount || '-'}</td>
+            <td>${tx.gasFee || '-'}</td>
+            <td class="nft-id-cell">${tx.nftId || '-'}</td> <!-- ✅ ENSURE NFT ID DISPLAY -->
+            <td>${tx.fromAddress ? shortAddress(tx.fromAddress) : '-'}</td>
+            <td>${tx.toAddress ? shortAddress(tx.toAddress) : '-'}</td>
+            <td><span class="status-badge status-${tx.status}">${tx.status}</span></td>
+            <td>${formatTime(tx.timestamp)}</td>
+            <td>
+              ${tx.hash ? `<a href="${getExplorerLink(tx.hash)}" target="_blank" class="btn btn-sm btn-outline-primary">View</a>` : ''}
+            </td>
+          </tr>
+        `).join('');
+      }
+
+      // ✅ UPDATED: Include 'list' type in filtering
+      filter(txs, type) {
+        if (type === 'all') return txs;
+        return txs.filter(tx => 
+          type === 'buy' ? ['purchase', 'marketplace_purchase'].includes(tx.type) :
+          type === 'sell' ? tx.type === 'marketplace_purchase' :
+          type === 'list' ? tx.type === 'list' : // ✅ NEW
+          type === 'delist' ? tx.type === 'delist' :
+          tx.status === type
+        );
+      }
+
+      // ✅ UPDATED: Add 'list' type badge
+      getTypeBadge(type) {
+        const badges = {
+          purchase: '<span class="type-badge type-purchase">Purchase</span>',
+          marketplace_purchase: '<span class="type-badge type-marketplace_purchase">Marketplace</span>',
+          delist: '<span class="type-badge type-delist">Delist</span>',
+          list: '<span class="type-badge type-list">List</span>' // ✅ NEW
+        };
+        return badges[type] || `<span class="type-badge">${type}</span>`;
+      }
+
+      init() {
+        this.render(this.currentFilter);
+        
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            this.currentFilter = e.target.dataset.filter;
+            this.render(this.currentFilter);
+          });
+        });
+
+        document.getElementById('clearHistory')?.addEventListener('click', async () => {
+          const confirmed = await window.txModal?.confirm({
+            title: 'Clear History',
+            message: 'Are you sure you want to clear all transaction history?',
+            confirmText: 'Clear',
+            cancelText: 'Cancel',
+            dangerous: true
+          });
+          if (confirmed) {
+            localStorage.removeItem(this.key);
+            this.render(this.currentFilter);
+          }
+        });
+      }
+    }
+
+    // ✅ ENSURE txHistory is available globally
+    window.txHistoryPage = new TxHistoryPage();
+  </script>
+</body>
+</html>
