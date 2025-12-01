@@ -167,6 +167,7 @@
   border-radius: 20px;
   overflow: hidden;
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+  position: relative;
 }
 
 .tournament-card:hover {
@@ -186,6 +187,7 @@
   flex-direction: column;
   gap: 15px;
 }
+
 /* === POKEMON IMAGE === */
 .pokemon-image {
   width: 100%;
@@ -245,7 +247,8 @@
   z-index: 2;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
-/* === TYPES === */
+
+/* === TYPES WITH COLORS === */
 .pokemon-types {
   display: flex;
   gap: 8px;
@@ -261,14 +264,32 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
+/* Type-specific colors */
+.type-badge.fire { background: #ff6b6b; }
+.type-badge.water { background: #4d8df5; }
+.type-badge.grass { background: #5cb85c; }
+.type-badge.electric { background: #ffd93d; color: #000; }
+.type-badge.ice { background: #74b9ff; }
+.type-badge.fighting { background: #e17055; }
+.type-badge.poison { background: #a55eea; }
+.type-badge.ground { background: #f39c12; }
+.type-badge.flying { background: #81ecec; color: #000; }
+.type-badge.psychic { background: #fd79a8; }
+.type-badge.bug { background: #00b894; }
+.type-badge.rock { background: #95a5a6; }
+.type-badge.ghost { background: #a29bfe; }
+.type-badge.dragon { background: #6c5ce7; }
+.type-badge.dark { background: #2d3436; }
+.type-badge.steel { background: #bdc3c7; color: #000; }
+.type-badge.fairy { background: #ff7675; }
+.type-badge.normal { background: #ddd; color: #000; }
 
-/* ===== ABILITIES ===== */
- .pokemon-abilities
- {
+/* === ABILITIES ===== */
+.pokemon-abilities {
   margin: 6px 0;
   padding: 10px;
   background: rgba(0, 255, 157, 0.05);
@@ -281,6 +302,7 @@
   flex-shrink: 0;
   line-height: 1.4;
 }
+
 /* === DESCRIPTION === */
 .pokemon-description {
   color: rgba(234, 234, 234, 0.7);
@@ -355,27 +377,13 @@
     margin-bottom: 3px;
   }
 
-  .token-badge {
-    font-size: 0.75rem;
-    margin-bottom: 5px;
-  }
-
-  .pokemon-types {
-    margin-bottom: 3px;
-  }
-
   .type-badge {
     padding: 5px 14px;
     font-size: 0.7rem;
   }
 
-  .abilities-title {
-    margin-bottom: 6px;
-  }
-
-  .ability-badge {
+  .pokemon-abilities {
     font-size: 0.6rem;
-    padding: 3px 10px;
   }
 
   .pokemon-description {
