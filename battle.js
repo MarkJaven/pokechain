@@ -1,5 +1,5 @@
 // ===================================================================
-// BATTLE ENGINE - Abilities-Only Combat System (FIXED)
+// BATTLE ENGINE - Updated for New Arena Layout
 // ===================================================================
 
 const gameState = {
@@ -20,13 +20,15 @@ const UI = {
     sprite: document.getElementById('playerSprite'),
     name: document.getElementById('playerName'),
     hpBar: document.getElementById('playerHpFill'),
-    hpText: document.getElementById('playerHpText')
+    hpText: document.getElementById('playerHpText'),
+    wrapper: document.getElementById('playerWrapper')
   },
   enemy: {
     sprite: document.getElementById('enemySprite'),
     name: document.getElementById('enemyName'),
     hpBar: document.getElementById('enemyHpFill'),
-    hpText: document.getElementById('enemyHpText')
+    hpText: document.getElementById('enemyHpText'),
+    wrapper: document.getElementById('enemyWrapper')
   },
   difficulty: document.getElementById('difficultyBadge'),
   currentMatch: document.getElementById('currentMatch'),
@@ -39,11 +41,12 @@ const UI = {
   resultScreen: document.getElementById('resultScreen'),
   resultTitle: document.getElementById('resultTitle'),
   resultMessage: document.getElementById('resultMessage'),
-  loading: document.getElementById('loadingOverlay')
+  loading: document.getElementById('loadingOverlay'),
+  arena: document.getElementById('battleArena')
 };
 
 // ===================================================================
-// INITIALIZATION - WITH ERROR HANDLING
+// INITIALIZATION
 // ===================================================================
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -75,16 +78,13 @@ async function initializeTournament() {
   gameState.difficulty = params.get('difficulty') || 'normal';
   const opponentCount = parseInt(params.get('opponents')) || 7;
   
-  // Validate player data
   if (!playerData.name || !playerData.abilities) {
     throw new Error('Invalid Pokemon data: missing name or abilities');
   }
   
-  // Load player Pokemon
   const playerPokemon = await loadPokemonData(playerData, true);
   gameState.participants.push(playerPokemon);
   
-  // Generate opponents
   const opponents = await generateOpponents(opponentCount, playerData.pokemonId);
   gameState.participants.push(...opponents);
   
@@ -98,13 +98,12 @@ async function initializeTournament() {
 }
 
 // ===================================================================
-// POKEMON DATA LOADING - FIXED
+// POKEMON DATA LOADING
 // ===================================================================
 
 async function loadPokemonData(pokemonData, isPlayer) {
   const name = pokemonData.name.toLowerCase();
   
-  // Fetch Pokemon data with error handling
   let pokemonRes;
   try {
     pokemonRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
@@ -115,7 +114,6 @@ async function loadPokemonData(pokemonData, isPlayer) {
   
   const pokemon = await pokemonRes.json();
   
-  // Calculate stats at level 50
   const stats = {
     hp: calculateStat(pokemon.stats.find(s => s.stat.name === 'hp').base_stat, 50, true),
     attack: calculateStat(pokemon.stats.find(s => s.stat.name === 'attack').base_stat, 50),
@@ -125,10 +123,8 @@ async function loadPokemonData(pokemonData, isPlayer) {
     speed: calculateStat(pokemon.stats.find(s => s.stat.name === 'speed').base_stat, 50)
   };
   
-  // Use abilities from CARD DATA (passed from tournament), fallback to API
   let abilities = [];
   if (pokemonData.abilities && Array.isArray(pokemonData.abilities) && pokemonData.abilities.length > 0) {
-    // Use abilities from the card
     abilities = pokemonData.abilities.map(ab => ({
       name: ab.name ? ab.name.replace(/-/g, ' ') : 'Unknown Ability',
       isHidden: ab.isHidden || false,
@@ -136,7 +132,6 @@ async function loadPokemonData(pokemonData, isPlayer) {
       effect: ab.effect || ab.shortEffect || 'A mysterious ability.'
     }));
   } else {
-    // Fallback: fetch from API if card data missing
     abilities = await Promise.all(pokemon.abilities.map(async a => {
       try {
         const abilityData = await fetchAbility(a.ability.url);
@@ -277,7 +272,12 @@ function generateMatchups() {
   
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      matchups.push({ p1Index: i, p2Index: j, p1: gameState.participants[i], p2: gameState.participants[j] });
+      matchups.push({ 
+        p1Index: i, 
+        p2Index: j, 
+        p1: gameState.participants[i], 
+        p2: gameState.participants[j] 
+      });
     }
   }
   
@@ -339,7 +339,6 @@ function executeTurn() {
 function enablePlayerActions(pokemon) {
   UI.abilityButtons.innerHTML = '';
   
-  // Use abilities from card data
   const usableAbilities = pokemon.abilities.filter(a => !a.isHidden).slice(0, 2);
   
   usableAbilities.forEach((ability, index) => {
@@ -347,9 +346,9 @@ function enablePlayerActions(pokemon) {
     btn.className = 'ability-btn';
     
     btn.innerHTML = `
-      <div style="font-weight: 800;">${ability.name}</div>
-      <div style="font-size: 0.6rem; opacity: 0.8;">
-        ${ability.shortEffect.substring(0, 50)}...
+      <div style="font-weight: 800; margin-bottom: 4px;">${ability.name}</div>
+      <div style="font-size: 0.65rem; opacity: 0.8; line-height: 1.3;">
+        ${ability.shortEffect.substring(0, 60)}${ability.shortEffect.length > 60 ? '...' : ''}
       </div>
     `;
     
@@ -359,7 +358,7 @@ function enablePlayerActions(pokemon) {
   
   UI.defendBtn.onclick = () => playerDefend();
   UI.actionSelection.classList.remove('hidden');
-  log('battle', 'Your turn! Choose an ability or defend.');
+  log('battle', '🎮 Your turn! Choose an ability or defend.');
 }
 
 async function playerUseAbility(ability) {
@@ -382,13 +381,14 @@ async function playerDefend() {
   const currentBattler = gameState.turn === 0 ? gameState.currentMatch.p1 : gameState.currentMatch.p2;
   gameState.defending = currentBattler;
   
-  const hud = currentBattler.isPlayer ? document.querySelector('.player-side .pokemon-hud') : document.querySelector('.enemy-side .pokemon-hud');
-  const sprite = currentBattler.isPlayer ? document.querySelector('.player-side .pokemon-sprite') : document.querySelector('.enemy-side .pokemon-sprite');
+  const wrapper = currentBattler.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
+  const hud = wrapper.querySelector('.pokemon-hud');
+  const sprite = wrapper.querySelector('.pokemon-sprite');
   
   hud.classList.add('defending');
   sprite.classList.add('defending');
   
-  log('defend', `${currentBattler.name} defends! Damage reduced by 50%`);
+  log('defend', `🛡️ ${currentBattler.name} takes a defensive stance! Damage reduced by 50%`);
   
   gameState.turn = 1 - gameState.turn;
   setTimeout(() => {
@@ -415,7 +415,7 @@ async function executeAIActions(attacker) {
     await executeAbility(attacker, ability);
   } else {
     gameState.defending = attacker;
-    log('defend', `${attacker.name} defends!`);
+    log('defend', `🛡️ ${attacker.name} defends!`);
   }
   
   if (gameState.battleActive) {
@@ -425,15 +425,14 @@ async function executeAIActions(attacker) {
 }
 
 async function executeAbility(user, ability) {
-  log('ability', `${user.name} used ${ability.name}!`);
-  log('ability', `${ability.shortEffect}`);
+  log('ability', `💥 ${user.name} used ${ability.name}!`);
   
   const effect = ability.shortEffect.toLowerCase();
   const { p1, p2 } = gameState.currentMatch;
   const opponent = user === p1 ? p2 : p1;
   
   const power = effect.includes('boost') || effect.includes('increase') ? 0 : 
-                effect.includes('heavy') ? 80 : 
+                effect.includes('heavy') || effect.includes('powerful') ? 80 : 
                 effect.includes('strong') ? 60 : 40;
   
   if (power > 0) {
@@ -441,11 +440,11 @@ async function executeAbility(user, ability) {
     
     if (gameState.defending === opponent) {
       damage = Math.floor(damage * 0.5);
-      log('defend', `${opponent.name} defended! Damage reduced to ${damage}`);
+      log('defend', `Defense successful! Damage reduced to ${damage}`);
     }
     
     opponent.currentHp = Math.max(0, opponent.currentHp - damage);
-    log('damage', `Dealt ${damage} damage!`);
+    log('damage', `💢 Dealt ${damage} damage!`);
     showDamageNumber(opponent, damage);
     updateHpBar(opponent);
     
@@ -454,10 +453,10 @@ async function executeAbility(user, ability) {
     if (effect.includes('heal') || effect.includes('recover')) {
       const heal = Math.floor(user.stats.hp * 0.3);
       user.currentHp = Math.min(user.stats.hp, user.currentHp + heal);
-      log('heal', `${user.name} restored ${heal} HP!`);
+      log('heal', `💚 ${user.name} restored ${heal} HP!`);
       updateHpBar(user);
     } else if (effect.includes('attack') || effect.includes('boost')) {
-      log('ability', `${user.name}'s attack power increased!`);
+      log('ability', `⬆️ ${user.name}'s power increased!`);
     }
   }
 }
@@ -503,9 +502,9 @@ function calculateEffectiveness(moveType, defenderTypes) {
     }
   });
   
-  if (multiplier > 1) log('effectiveness', "It's super effective!");
+  if (multiplier > 1) log('effectiveness', "✨ It's super effective!");
   else if (multiplier < 1 && multiplier > 0) log('effectiveness', "It's not very effective...");
-  else if (multiplier === 0) log('effectiveness', "No effect!");
+  else if (multiplier === 0) log('effectiveness', "❌ No effect!");
   
   return multiplier;
 }
@@ -516,7 +515,7 @@ function calculateEffectiveness(moveType, defenderTypes) {
 
 async function handleFaint(faintedPokemon) {
   gameState.battleActive = false;
-  log('faint', `${faintedPokemon.name} fainted!`);
+  log('faint', `💀 ${faintedPokemon.name} fainted!`);
   
   const { p1, p2 } = gameState.currentMatch;
   const winner = faintedPokemon === p1 ? p2 : p1;
@@ -524,7 +523,7 @@ async function handleFaint(faintedPokemon) {
   winner.wins++;
   faintedPokemon.losses++;
   
-  log('battle', `${winner.name} wins the match!`);
+  log('battle', `🏆 ${winner.name} wins the match!`);
   
   updateStandings();
   
@@ -550,17 +549,17 @@ async function endTournament() {
   
   UI.resultTitle.textContent = isVictory ? '🏆 TOURNAMENT CHAMPION!' : 'TOURNAMENT COMPLETE';
   UI.resultMessage.innerHTML = isVictory 
-    ? `Perfect! ${player.wins}/${gameState.matchups.length} wins!<br><br>💰 Earned ${rewards.total} PCT Tokens!`
+    ? `Perfect performance! ${player.wins} wins!<br><br>💰 Earned ${rewards.total} PCT Tokens!`
     : `Final Rank: #${rank} with ${player.wins} wins<br><br>💰 Earned ${rewards.total} PCT Tokens!`;
   
-  UI.resultScreen.className = `result-screen ${isVictory ? 'victory' : 'defeat'}`;
+  UI.resultScreen.querySelector('.result-content').className = `result-content ${isVictory ? 'victory' : 'defeat'}`;
   UI.resultScreen.classList.remove('hidden');
   
   document.getElementById('returnBtn').onclick = () => {
     window.location.href = 'tournament.html';
   };
   
-  log('battle', `🏆 Tournament ended! Your rank: #${rank}`);
+  log('battle', `🎉 Tournament ended! Your rank: #${rank}`);
 }
 
 function calculateRewards() {
@@ -631,34 +630,43 @@ function updateStandings() {
       if (p1 === pokemon || p2 === pokemon) item.classList.add('current');
     }
     
+    const rankEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+    
     item.innerHTML = `
-      <span>${index + 1}. ${pokemon.name}</span>
-      <span>${pokemon.wins}-${pokemon.losses}</span>
+      <span style="font-weight: 800;">${rankEmoji} ${pokemon.name}</span>
+      <span style="opacity: 0.8;">${pokemon.wins}W-${pokemon.losses}L</span>
     `;
     
     UI.standings.appendChild(item);
   });
 }
 
-function log(type, message, extra = {}) {
+function log(type, message) {
   const entry = document.createElement('div');
   entry.className = `log-entry ${type}`;
   entry.textContent = message;
   UI.battleLog.appendChild(entry);
   UI.battleLog.scrollTop = UI.battleLog.scrollHeight;
+  
+  // Keep log manageable
+  if (UI.battleLog.children.length > 50) {
+    UI.battleLog.removeChild(UI.battleLog.firstChild);
+  }
 }
 
 function showDamageNumber(pokemon, damage) {
-  const sprite = pokemon.isPlayer ? UI.player.sprite : UI.enemy.sprite;
-  const rect = sprite.getBoundingClientRect();
+  const wrapper = pokemon.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
+  const rect = wrapper.getBoundingClientRect();
+  const arenaRect = UI.arena.getBoundingClientRect();
   
   const damageEl = document.createElement('div');
   damageEl.className = 'damage-number';
   damageEl.textContent = `-${damage}`;
   damageEl.style.color = damage > 50 ? '#ff3b3b' : '#ffd93d';
   damageEl.style.left = `${rect.left + rect.width / 2}px`;
-  damageEl.style.top = `${rect.top}px`;
+  damageEl.style.top = `${rect.top - 20}px`;
   damageEl.style.position = 'fixed';
+  damageEl.style.zIndex = '200';
   
   document.body.appendChild(damageEl);
   setTimeout(() => damageEl.remove(), 1500);
