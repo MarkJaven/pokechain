@@ -171,7 +171,7 @@ async function endTournament() {
   const rewards = calculateRewards();
 
   // Show processing screen
-  UI.resultTitle.textContent = 'Processing Tournament...';
+  UI.resultTitle.textContent = '💎 Processing Tournament...';
   UI.resultMessage.textContent = 'Submitting results to blockchain...';
   UI.resultScreen.classList.remove('hidden');
 
@@ -191,9 +191,9 @@ async function endTournament() {
     const signer = await window.wallet.getSigner();
     const account = window.wallet.getAccount();
 
-    console.log(' Submitting tournament results for:', account);
-    console.log(' Tournament ID:', gameState.tournamentId);
-    console.log(' Wins:', player.wins);
+    console.log('🎯 Submitting tournament results for:', account);
+    console.log('📊 Tournament ID:', gameState.tournamentId);
+    console.log('🏆 Wins:', player.wins);
 
     // Check if tournament contract is configured
     if (!window.CONTRACTS?.TOURNAMENT || !window.ABIS?.TOURNAMENT) {

@@ -14,6 +14,11 @@
         .btn-warning { background: #ffaa00; }
         input { padding: 10px; width: 300px; margin: 5px; }
         pre { background: #000; padding: 10px; overflow: auto; }
+        .loading { display: none; color: #00ff9d; margin: 5px; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .success { background: rgba(0, 255, 157, 0.2); }
+        .error { background: rgba(255, 68, 68, 0.2); }
+        .info { background: rgba(255, 170, 0, 0.2); }
     </style>
 </head>
 <body>
@@ -36,22 +41,25 @@
         <div class="card">
             <h3>3. Fix Specific Tournament</h3>
             <input type="text" id="fixTournamentId" placeholder="Enter Tournament ID">
-            <button class="btn" onclick="fixTournament()">Fix Tournament State</button>
+            <button class="btn" onclick="checkTournament()">Check Tournament State</button>
             <button class="btn btn-danger" onclick="forceExpireTournament()">Force Expire Tournament</button>
+            <button class="btn btn-warning" onclick="forceCompleteTournament()">Force Complete Tournament</button>
+            <div id="tournamentStatus" class="status"></div>
         </div>
         
         <div class="card">
             <h3>4. View All Tournaments for Address</h3>
-            <input type="text" id="playerAddress" placeholder="Player Address">
+            <input type="text" id="playerAddress" placeholder="Player Address (leave empty for current)">
             <button class="btn" onclick="viewPlayerTournaments()">View Player Data</button>
             <pre id="playerData"></pre>
         </div>
         
         <div class="card">
-            <h3>5. Manual Mint PKCN (for testing)</h3>
-            <input type="text" id="recipient" placeholder="Recipient Address">
-            <input type="number" id="amount" placeholder="Amount" value="100">
-            <button class="btn" onclick="manualMint()">Manual Mint PKCN</button>
+            <h3>5. Emergency Admin Functions</h3>
+            <button class="btn btn-danger" onclick="emergencyExpireAll()">Emergency Expire All Active</button>
+            <button class="btn btn-warning" onclick="fixMinterIfOwner()">Auto-Fix Minter (If Owner)</button>
+            <button class="btn" onclick="debugBigInt()">Debug BigInt Issue</button>
+            <div id="emergencyStatus" class="status"></div>
         </div>
     </div>
 
@@ -60,161 +68,396 @@
         const CONFIG = window.CONTRACTS;
         let provider, signer, pkcnContract, tournamentContract;
         
-        async function init() {
-            if (!window.ethereum) {
-                alert("Install MetaMask");
-                return;
+        // Enhanced tournament ABI with all needed functions
+        const TOURNAMENT_ABI = [
+            // Tournament management
+            "function tournaments(string) view returns (address player, uint256 tokenId, string difficulty, uint256 wins, uint256 totalMatches, bool isActive, bool isExpired, bool isCompleted, bool rewardClaimed, uint256 startBlock, uint256 entryFee, uint256 finalReward)",
+            "function expireTournament(string tournamentId) external",
+            "function forceCompleteTournament(string tournamentId, uint256 wins, bool isPerfect) external",
+            "function completeTournament(string tournamentId, uint256 wins, bool isPerfect) external",
+            "function claimReward(string tournamentId) external",
+            
+            // Player data
+            "function getPlayerTournaments(address player) view returns (string[] memory)",
+            "function getActiveTournament(address player) view returns (string tournamentId, bool exists, bool expired)",
+            "function getUnclaimedRewards(address player) view returns (string[] memory tournamentIds, uint256[] memory rewards)",
+            
+            // Admin functions
+            "function owner() view returns (address)",
+            "function isAdmin(address) view returns (bool)",
+            "function setAdmin(address admin, bool status) external",
+            
+            // Emergency functions
+            "function emergencyExpireAll() external onlyOwner",
+            "function fixTournamentState(string tournamentId, bool active, bool completed, bool claimed) external onlyOwner"
+        ];
+        
+        const PKCN_ABI = [
+            "function minter() view returns (address)",
+            "function setMinter(address newMinter) external",
+            "function mint(address to, uint256 amount) external",
+            "function owner() view returns (address)",
+            "function balanceOf(address) view returns (uint256)"
+        ];
+        
+        // Helper function to safely convert BigInt to Number
+        function safeNumber(value) {
+            if (typeof value === 'bigint') {
+                // Check if it fits in JavaScript's safe integer range
+                if (value > BigInt(Number.MAX_SAFE_INTEGER) || value < BigInt(Number.MIN_SAFE_INTEGER)) {
+                    // Return as string to avoid precision loss
+                    return value.toString();
+                }
+                return Number(value);
             }
-            
-            await window.ethereum.request({ method: 'eth_requestAccounts' });
-            provider = new ethers.BrowserProvider(window.ethereum);
-            signer = await provider.getSigner();
-            
-            // PKCN Contract with minter function
-            const pkcnABI = [
-                "function minter() view returns (address)",
-                "function setMinter(address newMinter) external",
-                "function mint(address to, uint256 amount) external",
-                "function owner() view returns (address)",
-                "function balanceOf(address) view returns (uint256)"
-            ];
-            
-            // Tournament Contract
-            const tournamentABI = [
-                "function getTournamentData(string) view returns (address, uint256, string, uint256, uint256, bool, bool, uint256, uint256, uint256)",
-                "function expireTournament(string) external",
-                "function owner() view returns (address)",
-                "function getActiveTournament(address) view returns (string, bool, bool)",
-                "function getUnclaimedRewards(address) view returns (string[], uint256[])"
-            ];
-            
-            pkcnContract = new ethers.Contract(CONFIG.PKCN, pkcnABI, signer);
-            tournamentContract = new ethers.Contract(CONFIG.TOURNAMENT, tournamentABI, signer);
-            
-            console.log("Contracts initialized");
+            return value;
+        }
+        
+        // Helper to format BigInt values for display
+        function formatBigInt(value) {
+            if (typeof value === 'bigint') {
+                return value.toString();
+            }
+            return value;
+        }
+        
+        async function init() {
+            try {
+                if (!window.ethereum) {
+                    showStatus('minterStatus', '⚠️ Install MetaMask first', 'error');
+                    return false;
+                }
+                
+                // Request accounts
+                const accounts = await window.ethereum.request({ 
+                    method: 'eth_requestAccounts' 
+                });
+                
+                if (!accounts || accounts.length === 0) {
+                    showStatus('minterStatus', '⚠️ Please connect your wallet', 'error');
+                    return false;
+                }
+                
+                provider = new ethers.BrowserProvider(window.ethereum);
+                signer = await provider.getSigner();
+                
+                // Initialize contracts
+                pkcnContract = new ethers.Contract(CONFIG.PKCN, PKCN_ABI, signer);
+                tournamentContract = new ethers.Contract(CONFIG.TOURNAMENT, TOURNAMENT_ABI, signer);
+                
+                console.log("✅ Contracts initialized");
+                console.log("Connected address:", await signer.getAddress());
+                console.log("PKCN Address:", CONFIG.PKCN);
+                console.log("Tournament Address:", CONFIG.TOURNAMENT);
+                
+                return true;
+            } catch (error) {
+                console.error("Initialization error:", error);
+                showStatus('minterStatus', `❌ Initialization failed: ${error.message}`, 'error');
+                return false;
+            }
+        }
+        
+        function showStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="${type}">${message}</div>`;
         }
         
         async function checkMinter() {
-            await init();
+            if (!await init()) return;
+            
             try {
                 const minter = await pkcnContract.minter();
                 const tournamentAddr = CONFIG.TOURNAMENT;
                 const isMinter = minter.toLowerCase() === tournamentAddr.toLowerCase();
                 
-                document.getElementById('minterStatus').innerHTML = `
-                    <p><strong>Current PKCN Minter:</strong> ${minter}</p>
-                    <p><strong>Tournament Address:</strong> ${tournamentAddr}</p>
-                    <p><strong>Status:</strong> ${isMinter ? '✅ Tournament IS minter' : '❌ Tournament is NOT minter'}</p>
-                    ${!isMinter ? '<p style="color: #ff4444;">⚠️ This is why rewards cannot be claimed!</p>' : ''}
+                const statusHtml = `
+                    <div class="status ${isMinter ? 'success' : 'error'}">
+                        <p><strong>Current PKCN Minter:</strong> ${minter}</p>
+                        <p><strong>Tournament Address:</strong> ${tournamentAddr}</p>
+                        <p><strong>Status:</strong> ${isMinter ? '✅ Tournament IS minter' : '❌ Tournament is NOT minter'}</p>
+                        ${!isMinter ? '<p style="color: #ff4444;">⚠️ This is why rewards cannot be claimed! Use "Set Tournament as Minter" if you are PKCN owner.</p>' : ''}
+                    </div>
                 `;
+                
+                document.getElementById('minterStatus').innerHTML = statusHtml;
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showStatus('minterStatus', `❌ Error: ${error.message}`, 'error');
             }
         }
         
         async function setMinter() {
-            await init();
+            if (!await init()) return;
+            
             try {
                 // Check if caller is owner
                 const pkcnOwner = await pkcnContract.owner();
                 const caller = await signer.getAddress();
                 
                 if (pkcnOwner.toLowerCase() !== caller.toLowerCase()) {
-                    alert(`You are not PKCN owner!\nOwner: ${pkcnOwner}\nYou: ${caller}`);
+                    showStatus('setMinterResult', `❌ You are not PKCN owner!<br>Owner: ${pkcnOwner}<br>You: ${caller}`, 'error');
                     return;
                 }
                 
                 const confirm = window.confirm(`Set Tournament (${CONFIG.TOURNAMENT}) as PKCN minter?`);
                 if (!confirm) return;
                 
+                showStatus('setMinterResult', '⏳ Sending transaction...', 'info');
+                
                 const tx = await pkcnContract.setMinter(CONFIG.TOURNAMENT);
-                document.getElementById('setMinterResult').innerHTML = "Transaction sent... waiting...";
+                showStatus('setMinterResult', `⏳ Transaction sent: ${tx.hash}<br>Waiting for confirmation...`, 'info');
                 
                 const receipt = await tx.wait();
                 if (receipt.status === 1) {
-                    document.getElementById('setMinterResult').innerHTML = "✅ Tournament set as minter successfully!";
+                    showStatus('setMinterResult', '✅ Tournament set as minter successfully!', 'success');
                     checkMinter(); // Refresh status
                 } else {
-                    document.getElementById('setMinterResult').innerHTML = "❌ Transaction failed";
+                    showStatus('setMinterResult', '❌ Transaction failed', 'error');
                 }
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showStatus('setMinterResult', `❌ Error: ${error.message}`, 'error');
             }
         }
         
-        async function fixTournament() {
-            await init();
-            const tournamentId = document.getElementById('fixTournamentId').value;
+        async function checkTournament() {
+            if (!await init()) return;
+            
+            const tournamentId = document.getElementById('fixTournamentId').value.trim();
             if (!tournamentId) {
-                alert("Enter tournament ID");
+                showStatus('tournamentStatus', '⚠️ Please enter a tournament ID', 'error');
                 return;
             }
             
             try {
-                const data = await tournamentContract.getTournamentData(tournamentId);
-                console.log("Tournament Data:", data);
+                showStatus('tournamentStatus', '⏳ Fetching tournament data...', 'info');
                 
-                alert(`Tournament Data:\n
-                Player: ${data[0]}
-                TokenId: ${data[1]}
-                Difficulty: ${data[2]}
-                Wins: ${data[3]}/${data[4]}
-                IsComplete: ${data[5]}
-                RewardClaimed: ${data[6]}
-                EntryFee: ${data[7]}
-                FinalReward: ${data[8]}
-                StartBlock: ${data[9]}
-                `);
+                // Get tournament data - FIXED: Properly handle tuple return
+                const data = await tournamentContract.tournaments(tournamentId);
                 
-                // Check if it's complete but not claimed
-                if (data[5] && !data[6]) {
-                    const claimNow = confirm("This tournament is complete but unclaimed. Try claiming from profile page now.");
-                    if (claimNow) {
-                        window.open('profile.html', '_blank');
-                    }
-                }
+                // Convert BigInt values to strings for display
+                const startBlock = formatBigInt(data.startBlock);
+                const entryFee = data.entryFee ? ethers.formatEther(data.entryFee) : '0';
+                const finalReward = data.finalReward ? ethers.formatEther(data.finalReward) : '0';
+                
+                const statusHtml = `
+                    <div class="status info">
+                        <h4>Tournament ID: ${tournamentId.substring(0, 20)}...</h4>
+                        <p><strong>Player:</strong> ${data.player}</p>
+                        <p><strong>Difficulty:</strong> ${data.difficulty}</p>
+                        <p><strong>Wins:</strong> ${formatBigInt(data.wins)}/${formatBigInt(data.totalMatches)}</p>
+                        <p><strong>Status:</strong> ${data.isActive ? 'Active' : 'Inactive'} | 
+                           ${data.isCompleted ? 'Completed' : 'Not Completed'} | 
+                           ${data.isExpired ? 'Expired' : 'Not Expired'}</p>
+                        <p><strong>Reward Claimed:</strong> ${data.rewardClaimed ? 'Yes' : 'No'}</p>
+                        <p><strong>Entry Fee:</strong> ${entryFee} ETH</p>
+                        <p><strong>Final Reward:</strong> ${finalReward} PKCN</p>
+                        <p><strong>Start Block:</strong> ${startBlock}</p>
+                    </div>
+                `;
+                
+                document.getElementById('tournamentStatus').innerHTML = statusHtml;
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showStatus('tournamentStatus', `❌ Error: ${error.message}`, 'error');
             }
         }
         
         async function forceExpireTournament() {
-            await init();
-            const tournamentId = document.getElementById('fixTournamentId').value;
-            if (!tournamentId) return;
+            if (!await init()) return;
             
-            const confirm = window.confirm(`Force expire tournament ${tournamentId}? This will unlock the NFT but lose the entry fee.`);
-            if (!confirm) return;
+            const tournamentId = document.getElementById('fixTournamentId').value.trim();
+            if (!tournamentId) {
+                showStatus('tournamentStatus', '⚠️ Please enter a tournament ID', 'error');
+                return;
+            }
             
             try {
+                // First check tournament state
+                const data = await tournamentContract.tournaments(tournamentId);
+                
+                if (data.rewardClaimed) {
+                    showStatus('tournamentStatus', '⚠️ Reward already claimed. Cannot expire.', 'error');
+                    return;
+                }
+                
+                if (data.isExpired) {
+                    showStatus('tournamentStatus', '⚠️ Tournament already expired.', 'info');
+                    return;
+                }
+                
+                // Get current block - FIXED: Proper BigInt comparison
+                const currentBlock = await provider.getBlockNumber();
+                const startBlock = data.startBlock;
+                
+                // Convert to BigInt for safe comparison
+                const currentBlockBigInt = BigInt(currentBlock);
+                const startBlockBigInt = typeof startBlock === 'bigint' ? startBlock : BigInt(startBlock);
+                const blocksPassed = currentBlockBigInt - startBlockBigInt;
+                
+                let confirmMessage = `Force expire tournament ${tournamentId}?\n\n`;
+                confirmMessage += `Player: ${data.player}\n`;
+                confirmMessage += `Blocks passed: ${blocksPassed.toString()}\n`;
+                confirmMessage += `Entry fee will be lost!\n\n`;
+                confirmMessage += `Proceed?`;
+                
+                if (!window.confirm(confirmMessage)) return;
+                
+                showStatus('tournamentStatus', '⏳ Sending expire transaction...', 'info');
+                
+                // Call expireTournament function
                 const tx = await tournamentContract.expireTournament(tournamentId);
-                await tx.wait();
-                alert("✅ Tournament force expired");
+                showStatus('tournamentStatus', `⏳ Transaction sent: ${tx.hash}<br>Waiting for confirmation...`, 'info');
+                
+                const receipt = await tx.wait();
+                if (receipt.status === 1) {
+                    showStatus('tournamentStatus', '✅ Tournament force expired successfully!', 'success');
+                    // Refresh tournament state
+                    setTimeout(() => checkTournament(), 2000);
+                } else {
+                    showStatus('tournamentStatus', '❌ Transaction failed', 'error');
+                }
             } catch (error) {
-                alert(`Error: ${error.message}\n\nThis only works if tournament is actually expired (1000 blocks passed).`);
+                let errorMessage = `❌ Error: ${error.message}`;
+                
+                // Handle common errors
+                if (error.message.includes('Tournament not active')) {
+                    errorMessage += '\n⚠️ Tournament is not active anymore.';
+                } else if (error.message.includes('not expired')) {
+                    errorMessage += '\n⚠️ Tournament has not expired yet (1000 blocks required).';
+                } else if (error.message.includes('caller is not owner')) {
+                    errorMessage += '\n⚠️ Only contract owner can force expire.';
+                } else if (error.message.includes('insufficient blocks')) {
+                    errorMessage += '\n⚠️ Not enough blocks have passed.';
+                } else if (error.message.includes('BigInt')) {
+                    errorMessage += '\n⚠️ BigInt conversion error. Try using the "Debug BigInt Issue" button.';
+                }
+                
+                showStatus('tournamentStatus', errorMessage, 'error');
+                console.error('Force expire error details:', error);
+            }
+        }
+        
+        async function forceCompleteTournament() {
+            if (!await init()) return;
+            
+            const tournamentId = document.getElementById('fixTournamentId').value.trim();
+            if (!tournamentId) {
+                showStatus('tournamentStatus', '⚠️ Please enter a tournament ID', 'error');
+                return;
+            }
+            
+            try {
+                // Get tournament data
+                const data = await tournamentContract.tournaments(tournamentId);
+                
+                if (data.isCompleted) {
+                    showStatus('tournamentStatus', '⚠️ Tournament already completed.', 'info');
+                    return;
+                }
+                
+                // Ask for wins and perfect status
+                const winsInput = prompt('Enter number of wins:', formatBigInt(data.wins) || '0');
+                if (winsInput === null) return;
+                
+                // Convert wins to BigInt for contract call
+                const winsBigInt = BigInt(winsInput);
+                const isPerfect = confirm('Was it a perfect run (all matches won)?');
+                
+                const confirmMsg = `Force complete tournament?\nWins: ${winsBigInt.toString()}\nPerfect: ${isPerfect}\nProceed?`;
+                if (!window.confirm(confirmMsg)) return;
+                
+                showStatus('tournamentStatus', '⏳ Force completing tournament...', 'info');
+                
+                // Try forceCompleteTournament first (admin function)
+                try {
+                    const tx = await tournamentContract.forceCompleteTournament(
+                        tournamentId,
+                        winsBigInt,
+                        isPerfect
+                    );
+                    showStatus('tournamentStatus', `⏳ Transaction sent: ${tx.hash}`, 'info');
+                    
+                    const receipt = await tx.wait();
+                    if (receipt.status === 1) {
+                        showStatus('tournamentStatus', '✅ Tournament force completed!', 'success');
+                        setTimeout(() => checkTournament(), 2000);
+                    }
+                } catch (error) {
+                    // If forceCompleteTournament fails, try regular completeTournament
+                    console.warn('forceCompleteTournament failed, trying regular:', error);
+                    
+                    const tx = await tournamentContract.completeTournament(
+                        tournamentId,
+                        winsBigInt,
+                        isPerfect
+                    );
+                    
+                    const receipt = await tx.wait();
+                    if (receipt.status === 1) {
+                        showStatus('tournamentStatus', '✅ Tournament completed!', 'success');
+                        setTimeout(() => checkTournament(), 2000);
+                    }
+                }
+            } catch (error) {
+                showStatus('tournamentStatus', `❌ Error: ${error.message}`, 'error');
             }
         }
         
         async function viewPlayerTournaments() {
-            await init();
-            const address = document.getElementById('playerAddress').value || await signer.getAddress();
+            if (!await init()) return;
+            
+            let address = document.getElementById('playerAddress').value.trim();
+            if (!address) {
+                address = await signer.getAddress();
+            }
             
             try {
-                // Get active tournament
-                const [activeId, exists, expired] = await tournamentContract.getActiveTournament(address);
-                
-                // Get unclaimed rewards
-                const [tournamentIds, rewards] = await tournamentContract.getUnclaimedRewards(address);
+                document.getElementById('playerData').textContent = 'Loading...';
                 
                 let output = `Player: ${address}\n\n`;
-                output += `ACTIVE TOURNAMENT:\n`;
-                output += `  ID: ${activeId || "None"}\n`;
-                output += `  Exists: ${exists}\n`;
-                output += `  Expired: ${expired}\n\n`;
                 
-                output += `UNCLAIMED REWARDS (${tournamentIds.length}):\n`;
-                for (let i = 0; i < tournamentIds.length; i++) {
-                    output += `  ${i+1}. ${tournamentIds[i]} - ${rewards[i]} PKCN\n`;
+                // Get active tournament
+                try {
+                    const activeData = await tournamentContract.getActiveTournament(address);
+                    output += `ACTIVE TOURNAMENT:\n`;
+                    output += `  ID: ${activeData[0] || "None"}\n`;
+                    output += `  Exists: ${activeData[1]}\n`;
+                    output += `  Expired: ${activeData[2]}\n\n`;
+                } catch (e) {
+                    output += `ACTIVE TOURNAMENT: Error - ${e.message}\n\n`;
+                }
+                
+                // Get all player tournaments
+                try {
+                    const allTournaments = await tournamentContract.getPlayerTournaments(address);
+                    output += `ALL TOURNAMENTS (${allTournaments.length}):\n`;
+                    
+                    for (const id of allTournaments) {
+                        try {
+                            const data = await tournamentContract.tournaments(id);
+                            output += `\n  ${id.substring(0, 20)}...:\n`;
+                            output += `    Status: ${data.isActive ? 'Active' : 'Inactive'} | `;
+                            output += `${data.isCompleted ? 'Completed' : 'Not'} | `;
+                            output += `${data.isExpired ? 'Expired' : 'Not'}\n`;
+                            output += `    Wins: ${formatBigInt(data.wins)}/${formatBigInt(data.totalMatches)}\n`;
+                            output += `    Claimed: ${data.rewardClaimed}\n`;
+                        } catch (e) {
+                            output += `  ${id.substring(0, 20)}...: Error fetching data\n`;
+                        }
+                    }
+                } catch (e) {
+                    output += `ALL TOURNAMENTS: Error - ${e.message}\n`;
+                }
+                
+                // Get unclaimed rewards
+                try {
+                    const [tournamentIds, rewards] = await tournamentContract.getUnclaimedRewards(address);
+                    output += `\nUNCLAIMED REWARDS (${tournamentIds.length}):\n`;
+                    for (let i = 0; i < tournamentIds.length; i++) {
+                        const rewardAmount = rewards[i] ? ethers.formatEther(rewards[i]) : '0';
+                        output += `  ${i+1}. ${tournamentIds[i].substring(0, 20)}... - ${rewardAmount} PKCN\n`;
+                    }
+                } catch (e) {
+                    output += `\nUNCLAIMED REWARDS: Error - ${e.message}\n`;
                 }
                 
                 document.getElementById('playerData').textContent = output;
@@ -223,36 +466,163 @@
             }
         }
         
-        async function manualMint() {
-            await init();
-            const recipient = document.getElementById('recipient').value;
-            const amount = document.getElementById('amount').value;
+        async function emergencyExpireAll() {
+            if (!await init()) return;
             
-            if (!recipient) {
-                alert("Enter recipient");
+            try {
+                // Check if caller is owner
+                const owner = await tournamentContract.owner();
+                const caller = await signer.getAddress();
+                
+                if (owner.toLowerCase() !== caller.toLowerCase()) {
+                    showStatus('emergencyStatus', `❌ Only contract owner can use this!<br>Owner: ${owner}<br>You: ${caller}`, 'error');
+                    return;
+                }
+                
+                if (!window.confirm('⚠️ EMERGENCY: Expire ALL active tournaments?\nThis will expire every active tournament in the contract!\nProceed?')) {
+                    return;
+                }
+                
+                showStatus('emergencyStatus', '⏳ Executing emergency expire all...', 'info');
+                
+                try {
+                    const tx = await tournamentContract.emergencyExpireAll();
+                    showStatus('emergencyStatus', `⏳ Transaction sent: ${tx.hash}`, 'info');
+                    
+                    const receipt = await tx.wait();
+                    if (receipt.status === 1) {
+                        showStatus('emergencyStatus', '✅ All active tournaments force expired!', 'success');
+                    }
+                } catch (error) {
+                    showStatus('emergencyStatus', `❌ Error: ${error.message}<br>Try force expiring tournaments individually.`, 'error');
+                }
+            } catch (error) {
+                showStatus('emergencyStatus', `❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function fixMinterIfOwner() {
+            if (!await init()) return;
+            
+            try {
+                const pkcnOwner = await pkcnContract.owner();
+                const caller = await signer.getAddress();
+                
+                if (pkcnOwner.toLowerCase() !== caller.toLowerCase()) {
+                    showStatus('emergencyStatus', `❌ You are not PKCN owner!<br>Owner: ${pkcnOwner}`, 'error');
+                    return;
+                }
+                
+                const minter = await pkcnContract.minter();
+                const tournamentAddr = CONFIG.TOURNAMENT;
+                
+                if (minter.toLowerCase() === tournamentAddr.toLowerCase()) {
+                    showStatus('emergencyStatus', '✅ Tournament is already minter', 'success');
+                    return;
+                }
+                
+                if (!window.confirm(`Set Tournament (${tournamentAddr}) as PKCN minter?`)) return;
+                
+                const tx = await pkcnContract.setMinter(tournamentAddr);
+                showStatus('emergencyStatus', `⏳ Setting minter... ${tx.hash}`, 'info');
+                
+                const receipt = await tx.wait();
+                if (receipt.status === 1) {
+                    showStatus('emergencyStatus', '✅ Tournament set as minter!', 'success');
+                }
+            } catch (error) {
+                showStatus('emergencyStatus', `❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function debugBigInt() {
+            if (!await init()) return;
+            
+            const tournamentId = document.getElementById('fixTournamentId').value.trim();
+            if (!tournamentId) {
+                showStatus('emergencyStatus', '⚠️ Enter a tournament ID first', 'error');
                 return;
             }
             
             try {
-                // Check if we're minter
-                const minter = await pkcnContract.minter();
-                const caller = await signer.getAddress();
+                showStatus('emergencyStatus', '🔍 Debugging BigInt issue...', 'info');
                 
-                if (minter.toLowerCase() !== caller.toLowerCase()) {
-                    alert(`You are not PKCN minter! Current minter: ${minter}`);
-                    return;
+                // Get tournament data
+                const data = await tournamentContract.tournaments(tournamentId);
+                
+                let debugOutput = `Tournament ID: ${tournamentId}\n\n`;
+                debugOutput += `Data types:\n`;
+                
+                // Check each field type
+                for (const [key, value] of Object.entries(data)) {
+                    debugOutput += `  ${key}: ${value} (type: ${typeof value})\n`;
                 }
                 
-                const tx = await pkcnContract.mint(recipient, amount);
-                await tx.wait();
-                alert(`✅ Minted ${amount} PKCN to ${recipient}`);
+                debugOutput += `\nstartBlock value: ${data.startBlock}\n`;
+                debugOutput += `startBlock type: ${typeof data.startBlock}\n`;
+                debugOutput += `startBlock as string: ${data.startBlock?.toString()}\n`;
+                
+                // Test block number
+                const currentBlock = await provider.getBlockNumber();
+                debugOutput += `\nCurrent block: ${currentBlock} (type: ${typeof currentBlock})\n`;
+                
+                // Try conversion
+                const startBlockValue = data.startBlock;
+                const currentBlockValue = currentBlock;
+                
+                debugOutput += `\nConversion test:\n`;
+                debugOutput += `  BigInt(currentBlock): ${BigInt(currentBlockValue)}\n`;
+                debugOutput += `  typeof BigInt(currentBlock): ${typeof BigInt(currentBlockValue)}\n`;
+                
+                if (typeof startBlockValue === 'bigint') {
+                    debugOutput += `  startBlock is already BigInt: ${startBlockValue}\n`;
+                    debugOutput += `  Blocks passed (BigInt): ${BigInt(currentBlockValue) - startBlockValue}\n`;
+                } else {
+                    debugOutput += `  Converting startBlock to BigInt: ${BigInt(startBlockValue)}\n`;
+                }
+                
+                showStatus('emergencyStatus', `<pre>${debugOutput}</pre>`, 'info');
+                
+                // Test direct expire call
+                debugOutput += `\n\nTesting expire function call:\n`;
+                try {
+                    // Try a simple call
+                    debugOutput += `  Calling expireTournament(${tournamentId})...\n`;
+                    
+                    // Use a gas estimate to test
+                    const gasEstimate = await tournamentContract.expireTournament.estimateGas(tournamentId);
+                    debugOutput += `  Gas estimate: ${gasEstimate}\n`;
+                    
+                    showStatus('emergencyStatus', `<pre>${debugOutput}</pre>`, 'info');
+                    
+                } catch (estError) {
+                    debugOutput += `  Estimate error: ${estError.message}\n`;
+                    showStatus('emergencyStatus', `<pre>${debugOutput}</pre>`, 'error');
+                }
+                
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showStatus('emergencyStatus', `❌ Debug error: ${error.message}`, 'error');
             }
         }
         
         // Initialize on load
-        window.addEventListener('load', init);
+        window.addEventListener('load', function() {
+            console.log("Admin Panel Loaded");
+            console.log("PKCN Address:", CONFIG?.PKCN);
+            console.log("Tournament Address:", CONFIG?.TOURNAMENT);
+            
+            // Auto-populate with current tournament ID if available
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const tournamentId = urlParams.get('tournamentId') || 
+                                   localStorage.getItem('currentTournamentId');
+                if (tournamentId) {
+                    document.getElementById('fixTournamentId').value = tournamentId;
+                }
+            } catch (e) {
+                console.log("Could not auto-populate tournament ID");
+            }
+        });
     </script>
 </body>
 </html>
