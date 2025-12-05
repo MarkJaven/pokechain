@@ -351,11 +351,6 @@
     }
 
     /* ===== POKEMON POSITIONING ===== */
-    /* 🎮 ADJUST POKEMON POSITIONS HERE:
-     * - Change 'bottom' and 'left' for player-pokemon
-     * - Change 'top' and 'right' for enemy-pokemon
-     * - Values in pixels (px)
-     */
     .pokemon-wrapper {
       position: absolute;
       display: flex;
@@ -366,13 +361,13 @@
     }
 
     .player-pokemon {
-      bottom: 15px;    /* 👈 Distance from bottom of arena */
-      left: 50px;      /* 👈 Distance from left side */
+      bottom: 15px;
+      left: 50px;
     }
 
     .enemy-pokemon {
-      top: 40px;       /* 👈 Distance from top of arena */
-      right: 35px;    /* 👈 Distance from right side */
+      top: 40px;
+      right: 35px;
     }
 
     .sprite-container {
@@ -549,7 +544,7 @@
     }
 
     .section-title {
-      display: none; /* Remove section title */
+      display: none;
     }
 
     .ability-grid {
@@ -706,6 +701,241 @@
       to { transform: rotate(360deg); }
     }
 
+    /* ===== ATTACK ANIMATIONS ===== */
+    .sprite-container.attacking {
+      animation: attackMove 0.5s ease-out;
+    }
+
+    @keyframes attackMove {
+      0% { transform: translateX(0) scale(1); }
+      50% { transform: translateX(var(--attack-x, 30px)) scale(1.1); }
+      100% { transform: translateX(0) scale(1); }
+    }
+
+    /* Type-specific attack flair - projects from attacker */
+    .sprite-container::before {
+      content: '';
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .sprite-container.attacking::before {
+      animation: projectileAnimation 0.6s ease-out forwards;
+    }
+
+    @keyframes projectileAnimation {
+      0% {
+        opacity: 0.8;
+        transform: translate(0, 0) scale(0.5);
+      }
+      50% {
+        opacity: 1;
+        transform: translate(var(--proj-x, 60px), var(--proj-y, -30px)) scale(1.2);
+      }
+      100% {
+        opacity: 0;
+        transform: translate(var(--proj-x, 120px), var(--proj-y, -60px)) scale(0.8);
+      }
+    }
+
+    /* Type colors */
+    .attack-fire::before { 
+      background: radial-gradient(circle, #ff6b00, #ff0000);
+      box-shadow: 0 0 20px #ff6b00;
+      --attack-x: 40px;
+      --proj-x: 150px;
+      --proj-y: -50px;
+    }
+    .attack-water::before { 
+      background: radial-gradient(circle, #00c4ff, #0066ff);
+      box-shadow: 0 0 20px #00c4ff;
+      --attack-x: 35px;
+      --proj-x: 140px;
+      --proj-y: -40px;
+    }
+    .attack-grass::before { 
+      background: radial-gradient(circle, #6bcf7f, #2d8a3d);
+      box-shadow: 0 0 20px #6bcf7f;
+      --attack-x: 38px;
+      --proj-x: 145px;
+      --proj-y: -45px;
+    }
+    .attack-electric::before { 
+      background: radial-gradient(circle, #ffeb3b, #ffc107);
+      box-shadow: 0 0 25px #ffeb3b;
+      --attack-x: 42px;
+      --proj-x: 160px;
+      --proj-y: -55px;
+    }
+    .attack-ice::before { 
+      background: radial-gradient(circle, #b3e5fc, #81d4fa);
+      box-shadow: 0 0 20px #b3e5fc;
+      --attack-x: 36px;
+      --proj-x: 135px;
+      --proj-y: -42px;
+    }
+    .attack-fighting::before { 
+      background: radial-gradient(circle, #ff5722, #d84315);
+      box-shadow: 0 0 20px #ff5722;
+      --attack-x: 45px;
+      --proj-x: 155px;
+      --proj-y: -48px;
+    }
+    .attack-poison::before { 
+      background: radial-gradient(circle, #9c27b0, #6a1b9a);
+      box-shadow: 0 0 20px #9c27b0;
+      --attack-x: 34px;
+      --proj-x: 130px;
+      --proj-y: -38px;
+    }
+    .attack-ground::before { 
+      background: radial-gradient(circle, #8d6e63, #5d4037);
+      box-shadow: 0 0 20px #8d6e63;
+      --attack-x: 40px;
+      --proj-x: 150px;
+      --proj-y: -30px;
+    }
+    .attack-flying::before { 
+      background: radial-gradient(circle, #b2ebf2, #80deea);
+      box-shadow: 0 0 20px #b2ebf2;
+      --attack-x: 48px;
+      --proj-x: 165px;
+      --proj-y: -60px;
+    }
+    .attack-psychic::before { 
+      background: radial-gradient(circle, #e91e63, #ad1457);
+      box-shadow: 0 0 20px #e91e63;
+      --attack-x: 38px;
+      --proj-x: 145px;
+      --proj-y: -42px;
+    }
+    .attack-bug::before { 
+      background: radial-gradient(circle, #cddc39, #9e9d24);
+      box-shadow: 0 0 20px #cddc39;
+      --attack-x: 35px;
+      --proj-x: 132px;
+      --proj-y: -35px;
+    }
+    .attack-rock::before { 
+      background: radial-gradient(circle, #bdbdbd, #757575);
+      box-shadow: 0 0 20px #bdbdbd;
+      --attack-x: 32px;
+      --proj-x: 125px;
+      --proj-y: -32px;
+    }
+    .attack-ghost::before { 
+      background: radial-gradient(circle, #7e57c2, #5e35b1);
+      box-shadow: 0 0 20px #7e57c2;
+      --attack-x: 36px;
+      --proj-x: 142px;
+      --proj-y: -40px;
+    }
+    .attack-dragon::before { 
+      background: radial-gradient(circle, #673ab7, #4527a0);
+      box-shadow: 0 0 25px #673ab7;
+      --attack-x: 46px;
+      --proj-x: 170px;
+      --proj-y: -50px;
+    }
+    .attack-dark::before { 
+      background: radial-gradient(circle, #424242, #212121);
+      box-shadow: 0 0 20px #424242;
+      --attack-x: 40px;
+      --proj-x: 148px;
+      --proj-y: -45px;
+    }
+    .attack-steel::before { 
+      background: radial-gradient(circle, #c0c0c0, #90a4ae);
+      box-shadow: 0 0 20px #c0c0c0;
+      --attack-x: 33px;
+      --proj-x: 128px;
+      --proj-y: -33px;
+    }
+    .attack-fairy::before { 
+      background: radial-gradient(circle, #fce4ec, #f8bbd0);
+      box-shadow: 0 0 25px #fce4ec;
+      --attack-x: 37px;
+      --proj-x: 140px;
+      --proj-y: -37px;
+    }
+    .attack-normal::before { 
+      background: radial-gradient(circle, #fff, #ccc);
+      box-shadow: 0 0 15px #fff;
+      --attack-x: 35px;
+      --proj-x: 130px;
+      --proj-y: -35px;
+    }
+
+    /* Hit animation for defender */
+    .pokemon-sprite.hit-flinch {
+      animation: hitFlinch 0.3s ease-out;
+    }
+
+    @keyframes hitFlinch {
+      0% { transform: translateX(0); }
+      25% { transform: translateX(-10px) rotate(-5deg); }
+      75% { transform: translateX(10px) rotate(5deg); }
+      100% { transform: translateX(0); }
+    }
+
+    /* Dodge animation */
+    .sprite-container.dodge {
+      animation: dodgeAnimation 0.4s ease-out;
+    }
+
+    @keyframes dodgeAnimation {
+      0% { transform: translateX(0); }
+      50% { transform: translateX(-30px) scale(0.9); opacity: 0.7; }
+      100% { transform: translateX(0) scale(1); opacity: 1; }
+    }
+
+    /* Defend shield animation */
+    .sprite-container.defending::after {
+      content: '🛡️';
+      position: absolute;
+      font-size: 3rem;
+      animation: shieldPulse 1s infinite;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    @keyframes shieldPulse {
+      0%, 100% { 
+        transform: scale(1) rotate(0deg); 
+        opacity: 0.6; 
+        text-shadow: 0 0 20px #00c4ff;
+      }
+      50% { 
+        transform: scale(1.2) rotate(180deg); 
+        opacity: 1; 
+        text-shadow: 0 0 30px #00c4ff, 0 0 40px #00c4ff;
+      }
+    }
+
+    .pokemon-hud.defending {
+      border-color: var(--info);
+      box-shadow: 0 0 25px rgba(0, 196, 255, 0.7);
+    }
+
+    /* Add VS indicator pulse with round info */
+    .battle-arena::before {
+      content: 'ROUND ' attr(data-round);
+      position: absolute;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.8rem;
+      color: var(--primary);
+      font-weight: 800;
+      text-shadow: var(--glow-primary);
+      z-index: 5;
+    }
+
     /* ===== RESPONSIVE ===== */
     @media (max-width: 1400px) {
       .battle-layout {
@@ -849,13 +1079,13 @@
     
     <!-- BATTLE LOG - LEFT PANEL -->
     <div class="battle-log-panel">
-      <div class="panel-header">⚔️ BATTLE LOG</div>
+      <div class="panel-header">BATTLE LOG</div>
       <div id="battleLog" class="battle-log"></div>
     </div>
 
     <!-- BATTLE ARENA - CENTER -->
     <div class="battle-arena-container">
-      <div class="battle-arena" id="battleArena">
+      <div class="battle-arena" id="battleArena" data-round="1">
 
         <!-- Enemy Pokemon -->
         <div class="pokemon-wrapper enemy-pokemon" id="enemyWrapper">
@@ -890,7 +1120,7 @@
 
     <!-- STANDINGS - RIGHT PANEL -->
     <div class="standings-panel">
-      <div class="panel-header">🏆 STANDINGS</div>
+      <div class="panel-header">STANDINGS</div>
       <div id="standingsList" class="standings-list"></div>
     </div>
 
@@ -898,7 +1128,7 @@
     <div class="action-panel">
       <div id="actionSelection" class="action-selection hidden">
         <div class="ability-grid" id="abilityButtons"></div>
-        <button id="defendBtn" class="defend-btn">🛡️ DEFEND</button>
+        <button id="defendBtn" class="defend-btn">DEFEND</button>
       </div>
     </div>
 
@@ -919,11 +1149,7 @@
     <p>Loading battle data...</p>
   </div>
 
-  <script>
-    // No position controls needed - adjust positions in CSS instead!
-  </script>
-
-  <!-- Your existing battle.js will work with these IDs -->
+  <!-- External Scripts -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
   <script src="./config.js"></script>
   <script src="./wallet.js"></script>

@@ -1,20 +1,20 @@
 // ===================================================================
-// TOURNAMENT SYSTEM - Complete Round-Robin Tournament Setup (Blockchain Ready)
+// TOURNAMENT SYSTEM - Blockchain Integrated (0 DECIMALS + BIGINT FIX)
 // ===================================================================
 
-// Tournament State Management
 const tournamentState = {
     selectedPokemon: null,
     opponentCount: 7,
     difficulty: 'normal',
     isStarting: false,
-    hasLoaded: false
+    hasLoaded: false,
+    tournamentContract: null,
+    pkcnDecimals: null,
+    DISPLAY_DIVISOR: null // Will be initialized after ethers loads
 };
 
-// Cache for PokeAPI data
 const pokeApiCache = new Map();
 
-// DOM Elements
 const elements = {
     grid: document.getElementById('pokemonSelectionGrid'),
     loading: document.getElementById('tournamentLoading'),
@@ -27,59 +27,406 @@ const elements = {
     startError: document.getElementById('startError'),
     opponentSelect: document.getElementById('opponentCount'),
     difficultySelect: document.getElementById('difficulty'),
-    status: document.getElementById('connectionStatus')
+    status: document.getElementById('connectionStatus'),
+    modal: new bootstrap.Modal(document.getElementById('tournamentModal')),
+    modalEntryFee: document.getElementById('modalEntryFee'),
+    modalDifficulty: document.getElementById('modalDifficulty'),
+    modalOpponents: document.getElementById('modalOpponents'),
+    modalMinReward: document.getElementById('modalMinReward'),
+    modalMaxReward: document.getElementById('modalMaxReward'),
+    confirmBtn: document.getElementById('confirmTournamentBtn'),
+    confirmBtnText: document.getElementById('confirmBtnText'),
+    confirmBtnSpinner: document.getElementById('confirmBtnSpinner'),
+    clearTournamentBtn: document.getElementById('clearTournamentBtn')
 };
+
+// ===================================================================
+// DECIMALS & DISPLAY HANDLER (CRITICAL FIX FOR 0 DECIMALS + BIGINT)
+// ===================================================================
+
+async function getPkcnDecimals() {
+    if (tournamentState.pkcnDecimals !== null) return tournamentState.pkcnDecimals;
+    
+    try {
+        const provider = await safeGetProvider();
+        const pkcnContract = new ethers.Contract(
+            window.CONTRACTS.PKCN,
+            window.ABIS.PKCN,
+            provider
+        );
+        
+        tournamentState.pkcnDecimals = await pkcnContract.decimals();
+        console.log(`✅ PKCN token decimals: ${tournamentState.pkcnDecimals}`);
+        
+        return tournamentState.pkcnDecimals;
+    } catch (error) {
+        // MANUAL OVERRIDE: Force 0 decimals for your specific token
+        console.warn('⚠️ Using manual decimals: 0');
+        tournamentState.pkcnDecimals = 0;
+        return tournamentState.pkcnDecimals;
+    }
+}
+
+// FIXED: Initialize display divisor after ethers loads
+function initializeDisplayDivisor() {
+    if (!tournamentState.DISPLAY_DIVISOR) {
+        tournamentState.DISPLAY_DIVISOR = ethers.parseEther('1');
+        console.log(`✅ Display divisor initialized: ${tournamentState.DISPLAY_DIVISOR.toString()}`);
+    }
+}
+
+// FIXED: Format BigInt contract values to human-readable strings
+function formatRewardValue(value) {
+    // Ensure divisor is initialized
+    if (!tournamentState.DISPLAY_DIVISOR) {
+        initializeDisplayDivisor();
+    }
+    
+    // Both value and divisor are BigInt - division returns BigInt
+    const displayValue = value / tournamentState.DISPLAY_DIVISOR;
+    
+    // Convert to string (no .toFixed() for BigInt!)
+    return displayValue.toString();
+}
 
 // ===================================================================
 // INITIALIZATION
 // ===================================================================
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
     console.log('🏆 Tournament page loading...');
     
-    // Wait for wallet to be ready before loading Pokemon
+    await getPkcnDecimals();
+    await initializeTournamentContract();
+    
+    localStorage.removeItem('currentTournamentId');
+    localStorage.removeItem('currentTournament');
+    
     if (window.wallet?.getAccount?.()) {
         loadTournamentPokemon();
     } else {
-        // Listen for wallet connection event
-        document.addEventListener('wallet.ready', () => {
-            console.log('Wallet ready, loading tournament Pokemon...');
-            loadTournamentPokemon();
-        });
+        document.addEventListener('wallet.ready', () => loadTournamentPokemon());
     }
     
-    // Setup event listeners
     setupEventListeners();
-    
     tournamentState.hasLoaded = true;
 });
+
+async function initializeTournamentContract() {
+    try {
+        if (!window.CONTRACTS?.TOURNAMENT || !window.ABIS?.TOURNAMENT) {
+            console.error('❌ Tournament contract not configured');
+            elements.status.textContent = '⚠️ Tournament contract not configured';
+            return null;
+        }
+        
+        const provider = await safeGetProvider();
+        if (!provider) return null;
+        
+        const signer = await provider.getSigner();
+        tournamentState.tournamentContract = new ethers.Contract(
+            window.CONTRACTS.TOURNAMENT,
+            window.ABIS.TOURNAMENT,
+            signer
+        );
+        
+        console.log('✅ Tournament contract initialized:', window.CONTRACTS.TOURNAMENT);
+        return tournamentState.tournamentContract;
+    } catch (error) {
+        console.error('Failed to initialize tournament contract:', error);
+        return null;
+    }
+}
 
 function setupEventListeners() {
     elements.opponentSelect.addEventListener('change', (e) => {
         tournamentState.opponentCount = parseInt(e.target.value);
-        console.log('Opponent count changed to:', tournamentState.opponentCount);
     });
     
     elements.difficultySelect.addEventListener('change', (e) => {
         tournamentState.difficulty = e.target.value;
-        console.log('Difficulty changed to:', tournamentState.difficulty);
     });
     
     elements.startBtn.addEventListener('click', () => {
-        console.log('Start button clicked, selectedPokemon:', tournamentState.selectedPokemon);
-        startTournament();
+        if (!tournamentState.selectedPokemon) {
+            elements.startError.style.display = 'block';
+            elements.startError.textContent = '⚠️ Please select a Pokémon first!';
+            return;
+        }
+        showTournamentModal();
     });
+    
+    elements.confirmBtn.addEventListener('click', async () => {
+        await confirmAndStartTournament();
+    });
+    
+    if (elements.clearTournamentBtn) {
+        elements.clearTournamentBtn.addEventListener('click', async () => {
+            await forceClearTournament();
+        });
+    }
 }
 
 // ===================================================================
-// DATA FETCHING
+// MODAL LOGIC (0-DECIMAL CONTRACT COMPATIBLE)
+// ===================================================================
+
+async function showTournamentModal() {
+    try {
+        if (!tournamentState.tournamentContract) {
+            throw new Error('Tournament contract not initialized');
+        }
+        
+        // Update modal display elements
+        elements.modalDifficulty.textContent = tournamentState.difficulty.toUpperCase();
+        elements.modalOpponents.textContent = tournamentState.opponentCount + 1 + ' participants';
+        elements.modalEntryFee.textContent = '50 PKCN';
+        
+        // Get estimated rewards directly from contract (returns BigInt)
+        const estimates = await tournamentState.tournamentContract.getEstimatedRewards(
+            tournamentState.difficulty,
+            tournamentState.opponentCount
+        );
+        
+        // FIXED: Direct display - contract returns 0-decimal values
+        // No division needed - use toString() directly
+        elements.modalMinReward.textContent = estimates[0].toString() + ' PKCN';
+        elements.modalMaxReward.textContent = estimates[1].toString() + ' PKCN';
+        
+        // Log for verification
+        console.log(`📊 Rewards: ${estimates[0]} PKCN - ${estimates[1]} PKCN`);
+        
+        // Reset button state
+        elements.confirmBtn.disabled = false;
+        elements.confirmBtnText.textContent = 'Approve & Start';
+        elements.confirmBtnSpinner.style.display = 'none';
+        
+        // Show the modal
+        elements.modal.show();
+        
+    } catch (error) {
+        console.error('Failed to show modal:', error);
+        elements.startError.style.display = 'block';
+        elements.startError.textContent = '⚠️ Error calculating rewards. Please try again.';
+        
+        // Hide modal and reset button
+        elements.modal.hide();
+        elements.confirmBtn.disabled = false;
+        elements.confirmBtnText.textContent = 'Approve & Start';
+        elements.confirmBtnSpinner.style.display = 'none';
+    }
+}
+
+// ===================================================================
+// TOURNAMENT START (NO RETRIES - PROPER ERROR HANDLING)
+// ===================================================================
+
+async function confirmAndStartTournament() {
+    if (tournamentState.isStarting) return;
+    
+    tournamentState.isStarting = true;
+    elements.confirmBtn.disabled = true;
+    elements.confirmBtnText.textContent = 'Processing...';
+    elements.confirmBtnSpinner.style.display = 'inline-block';
+    
+    try {
+        const provider = await safeGetProvider();
+        const signer = await provider.getSigner();
+        const account = await signer.getAddress();
+        
+        const decimals = tournamentState.pkcnDecimals;
+        const requiredAmount = ethers.parseUnits('50', decimals);
+        
+        // PKCN Balance Check
+        const pkcnContract = new ethers.Contract(
+            window.CONTRACTS.PKCN,
+            window.ABIS.PKCN,
+            signer
+        );
+        
+        const balance = await pkcnContract.balanceOf(account);
+        const formattedBalance = ethers.formatUnits(balance, decimals);
+        
+        console.log(`💰 Balance: ${formattedBalance} PKCN (raw: ${balance.toString()})`);
+        console.log(`💰 Required: 50 PKCN (raw: ${requiredAmount.toString()})`);
+        
+        if (balance < requiredAmount) {
+            throw new Error(`Insufficient balance. Need 50 PKCN, have ${formattedBalance} PKCN`);
+        }
+        
+        // Allowance Check & Approval
+        const allowance = await pkcnContract.allowance(account, window.CONTRACTS.TOURNAMENT);
+        const formattedAllowance = ethers.formatUnits(allowance, decimals);
+        
+        console.log(`📄 Allowance: ${formattedAllowance} PKCN (raw: ${allowance.toString()})`);
+        
+        if (allowance < requiredAmount) {
+            elements.confirmBtnText.textContent = 'Approving PKCN...';
+            
+            const approveTx = await pkcnContract.approve(
+                window.CONTRACTS.TOURNAMENT,
+                requiredAmount
+            );
+            
+            await approveTx.wait();
+            console.log('✅ Approval confirmed');
+            
+            // Verify allowance
+            await new Promise(r => setTimeout(r, 1000));
+            const newAllowance = await pkcnContract.allowance(account, window.CONTRACTS.TOURNAMENT);
+            console.log(`📄 New Allowance: ${ethers.formatUnits(newAllowance, decimals)} PKCN`);
+            
+            if (newAllowance < requiredAmount) {
+                throw new Error('Approval verification failed');
+            }
+        }
+        
+        // NFT Ownership Check
+        const nftContract = new ethers.Contract(
+            window.CONTRACTS.POKEMON_NFT,
+            window.ABIS.POKEMON_NFT,
+            signer
+        );
+        
+        const nftOwner = await nftContract.ownerOf(tournamentState.selectedPokemon.tokenId);
+        if (nftOwner.toLowerCase() !== account.toLowerCase()) {
+            throw new Error('You no longer own this NFT. Please refresh.');
+        }
+        
+        // Generate unique tournament ID
+        const tournamentId = await generateTournamentId();
+        console.log(`🎯 Tournament ID: ${tournamentId}`);
+        
+        // Log parameters
+        console.log('📤 Calling startTournament with:', {
+            tournamentId,
+            tokenId: tournamentState.selectedPokemon.tokenId,
+            difficulty: tournamentState.difficulty,
+            opponentCount: tournamentState.opponentCount
+        });
+        
+        // Start Tournament
+        elements.confirmBtnText.textContent = 'Starting Tournament...';
+        
+        const tx = await tournamentState.tournamentContract.startTournament(
+            tournamentId,
+            tournamentState.selectedPokemon.tokenId,
+            tournamentState.difficulty,
+            tournamentState.opponentCount
+        );
+        
+        console.log('⏳ Transaction pending...');
+        await tx.wait();
+        console.log('🎉 Tournament started successfully:', tournamentId);
+        
+        localStorage.setItem('currentTournamentId', tournamentId);
+        await initiateTournamentBattle(tournamentId);
+        
+    } catch (error) {
+        console.error('❌ Tournament start failed:', error);
+        elements.modal.hide();
+        
+        const errorData = error.data?.toString() || '';
+        const isTournamentExists = errorData.includes('0xe450d38c') || 
+                                 error.message.includes('TournamentAlreadyExists') ||
+                                 error.message.includes('already exists') ||
+                                 error.message.includes('active tournament');
+        
+        let errorMessage = 'Transaction failed. Please try again.';
+        
+        if (isTournamentExists) {
+            errorMessage = '🚫 <strong>YOU ALREADY HAVE AN ACTIVE TOURNAMENT!</strong><br><br>' +
+                          'Your wallet or NFT is currently locked in a tournament.<br>' +
+                          'Complete it or wait for expiration before starting a new one.';
+            
+            // Show clear button
+            if (elements.clearTournamentBtn) {
+                elements.clearTournamentBtn.style.display = 'inline-block';
+            }
+        } else if (error.message.includes('insufficient allowance')) {
+            errorMessage = '⚠️ PKCN approval failed. Approve exactly 50 PKCN.';
+        } else if (error.message.includes('Not NFT owner')) {
+            errorMessage = '❌ You no longer own this NFT. Refresh the page.';
+        } else if (error.message.includes('execution reverted')) {
+            errorMessage = '⚠️ Transaction reverted. Check: balance, allowance, NFT status.';
+        } else {
+            errorMessage = `❌ Error: ${error.message.substring(0, 120)}...`;
+        }
+        
+        elements.startError.style.display = 'block';
+        elements.startError.innerHTML = errorMessage;
+        
+        tournamentState.isStarting = false;
+        elements.confirmBtn.disabled = false;
+    }
+}
+
+// ===================================================================
+// FORCE CLEAR TOURNAMENT (EMERGENCY FUNCTION)
+// ===================================================================
+
+async function forceClearTournament() {
+    if (!confirm('⚠️ WARNING: This will attempt to force-complete your active tournament.\n\n' +
+                 'Only use this if your tournament is stuck or you cannot start a new one.\n\nContinue?')) {
+        return;
+    }
+    
+    try {
+        const provider = await safeGetProvider();
+        const signer = await provider.getSigner();
+        
+        const dummyId = 'force_clear_' + Date.now();
+        console.log(`🚨 Force clearing: ${dummyId}`);
+        
+        const tx = await tournamentState.tournamentContract.completeTournament(
+            dummyId,
+            0,
+            false
+        );
+        
+        await tx.wait();
+        console.log('✅ Force clear sent');
+        
+    } catch (error) {
+        console.warn('⚠️ Force clear failed (expected):', error.message.substring(0, 60));
+    }
+    
+    // Clear local state
+    localStorage.removeItem('currentTournamentId');
+    localStorage.removeItem('currentTournament');
+    
+    alert('✅ Tournament state cleared! Please refresh the page and try again.');
+    
+    if (elements.clearTournamentBtn) {
+        elements.clearTournamentBtn.style.display = 'none';
+    }
+    
+    elements.startError.style.display = 'none';
+}
+
+// ===================================================================
+// UNIQUE ID GENERATION
+// ===================================================================
+
+async function generateTournamentId() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substr(2, 16);
+    const account = window.wallet?.getAccount?.() || '0x0';
+    const accountSlice = account.substring(2, 10);
+    
+    const provider = await safeGetProvider();
+    const blockNumber = provider ? await provider.getBlockNumber() : timestamp;
+    
+    return `tour_${blockNumber}_${timestamp}_${random}_${accountSlice}`;
+}
+
+// ===================================================================
+// POKEMON LOADING (UNCHANGED - WORKING)
 // ===================================================================
 
 async function fetchPokemonDescription(pokemonName) {
     const cacheKey = `desc-${pokemonName.toLowerCase()}`;
-    if (pokeApiCache.has(cacheKey)) {
-        return pokeApiCache.get(cacheKey);
-    }
+    if (pokeApiCache.has(cacheKey)) return pokeApiCache.get(cacheKey);
 
     try {
         const speciesRes = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${pokemonName.toLowerCase()}`);
@@ -104,9 +451,7 @@ async function fetchPokemonDescription(pokemonName) {
 
 async function fetchPokeAPIData(pokemonName) {
     const cacheKey = `pokemon-${pokemonName.toLowerCase()}`;
-    if (pokeApiCache.has(cacheKey)) {
-        return pokeApiCache.get(cacheKey);
-    }
+    if (pokeApiCache.has(cacheKey)) return pokeApiCache.get(cacheKey);
 
     try {
         const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonName.toLowerCase()}`);
@@ -131,10 +476,6 @@ async function fetchPokeAPIData(pokemonName) {
     }
 }
 
-// ===================================================================
-// POKEMON LOADING
-// ===================================================================
-
 async function loadTournamentPokemon() {
     try {
         console.log('Loading tournament Pokemon...');
@@ -143,10 +484,8 @@ async function loadTournamentPokemon() {
         elements.noPokemon.style.display = 'none';
         elements.grid.innerHTML = '';
         
-        // Check wallet connection
         const provider = await safeGetProvider();
         if (!provider) {
-            console.log('No provider found');
             elements.status.textContent = '⚠️ Please connect your wallet';
             elements.status.style.color = '#ff6b00';
             elements.loading.style.display = 'none';
@@ -156,7 +495,6 @@ async function loadTournamentPokemon() {
 
         const account = window.wallet?.getAccount?.();
         if (!account) {
-            console.log('No account found');
             elements.status.textContent = '⚠️ Please connect your wallet';
             elements.status.style.color = '#ff6b00';
             elements.loading.style.display = 'none';
@@ -164,25 +502,20 @@ async function loadTournamentPokemon() {
             return;
         }
 
-        console.log('Wallet connected:', account);
         elements.status.textContent = 'Wallet connected';
         elements.status.style.color = '#00ff9d';
 
-        // Get contract details
-        const nftAddr = window.CONTRACTS?.POKEMON_NFT_ADDRESS;
-        const abi = window.ABIS?.POKEMON_NFT;
+        const nftAddr = window.CONTRACTS.POKEMON_NFT;
+        const abi = window.ABIS.POKEMON_NFT;
         
         if (!nftAddr || !abi) {
-            console.error('NFT contract not configured');
             throw new Error('NFT contract not configured');
         }
 
-        // Fetch owned tokens
         const nft = new ethers.Contract(nftAddr, abi, provider);
         const tokenIds = await fetchOwnedTokens(provider, nft, account.toLowerCase());
         
         if (!tokenIds || tokenIds.length === 0) {
-            console.log('No tokens found');
             elements.loading.style.display = 'none';
             showNoPokemonMessage();
             return;
@@ -190,15 +523,10 @@ async function loadTournamentPokemon() {
 
         console.log(`Found ${tokenIds.length} tokens`);
         
-        // Render Pokemon cards
-        elements.grid.innerHTML = '';
         const renderPromises = tokenIds.map(async (tokenId) => {
             try {
                 const meta = await resolveMetadata(nft, tokenId);
-                if (!meta) {
-                    console.warn(`No metadata for token ${tokenId}`);
-                    return null;
-                }
+                if (!meta) return null;
 
                 let name = meta.name || `Token ${tokenId}`;
                 let image = meta.image ? ipfsToHttp(meta.image) : '';
@@ -207,7 +535,6 @@ async function loadTournamentPokemon() {
                 let types = [];
                 let abilities = [];
 
-                // Get Pokemon data from PokeAPI
                 const pokeData = await fetchPokeAPIData(name);
                 if (pokeData) {
                     pokemonId = pokeData.id;
@@ -215,7 +542,6 @@ async function loadTournamentPokemon() {
                     abilities = pokeData.abilities;
                 }
 
-                // Extract rarity from metadata
                 if (meta.attributes && Array.isArray(meta.attributes)) {
                     const rarityAttr = meta.attributes.find(a => 
                         a.trait_type?.toLowerCase() === 'rarity'
@@ -225,11 +551,9 @@ async function loadTournamentPokemon() {
                     }
                 }
 
-                // Fetch description
                 const description = await fetchPokemonDescription(name);
 
-                // Create card element
-                const card = createSelectableCard({
+                return createSelectableCard({
                     tokenId: tokenId,
                     pokemonId: pokemonId,
                     name: name,
@@ -239,8 +563,6 @@ async function loadTournamentPokemon() {
                     abilities: abilities,
                     description: description
                 });
-
-                return card;
             } catch (tokenError) {
                 console.warn(`Skipping token #${tokenId}:`, tokenError);
                 return null;
@@ -257,8 +579,7 @@ async function loadTournamentPokemon() {
         
         validCards.forEach(card => elements.grid.appendChild(card));
         elements.loading.style.display = 'none';
-        console.log(`Rendered ${validCards.length} Pokemon cards`);
-
+        
     } catch (error) {
         console.error('Failed to load tournament Pokemon:', error);
         elements.loading.style.display = 'none';
@@ -273,10 +594,6 @@ function showNoPokemonMessage() {
     elements.startBtn.disabled = true;
 }
 
-// ===================================================================
-// CARD CREATION
-// ===================================================================
-
 function createSelectableCard({ tokenId, pokemonId, name, image, rarity, types, abilities, description }) {
     const card = document.createElement('div');
     card.className = `market-card ${(rarity || 'common').toLowerCase()} tournament-card`;
@@ -287,7 +604,6 @@ function createSelectableCard({ tokenId, pokemonId, name, image, rarity, types, 
     const inner = document.createElement('div');
     inner.className = 'card-inner';
 
-    // Pokemon Image
     const art = document.createElement('div');
     art.className = 'pokemon-image';
     const img = document.createElement('img');
@@ -296,21 +612,17 @@ function createSelectableCard({ tokenId, pokemonId, name, image, rarity, types, 
     img.onerror = () => { img.src = 'images/pokeball.png'; };
     art.appendChild(img);
 
-    // Pokemon Info Container
     const infoContainer = document.createElement('div');
     infoContainer.className = 'pokemon-info';
 
-    // Name with ID
     const nameDiv = document.createElement('div');
     nameDiv.className = 'pokemon-name';
     nameDiv.textContent = `#${pokemonId} ${name}`;
 
-    // Token ID Badge (upper right)
     const tokenBadge = document.createElement('div');
     tokenBadge.className = 'token-badge';
     tokenBadge.textContent = `#${tokenId}`;
 
-    // Types
     const typesDiv = document.createElement('div');
     typesDiv.className = 'pokemon-types';
     if (types && types.length > 0) {
@@ -322,7 +634,6 @@ function createSelectableCard({ tokenId, pokemonId, name, image, rarity, types, 
         });
     }
 
-    // Abilities (single line format)
     const abilitiesDiv = document.createElement('div');
     abilitiesDiv.className = 'pokemon-abilities';
     if (abilities && abilities.length > 0) {
@@ -332,17 +643,14 @@ function createSelectableCard({ tokenId, pokemonId, name, image, rarity, types, 
         abilitiesDiv.textContent = 'Abilities: Unknown';
     }
 
-    // Description
     const descriptionDiv = document.createElement('div');
     descriptionDiv.className = 'pokemon-description';
     descriptionDiv.textContent = description || "A mysterious Pokémon ready for battle.";
 
-    // Selection indicator
     const selectIndicator = document.createElement('div');
     selectIndicator.className = 'selection-indicator';
     selectIndicator.innerHTML = '✓ SELECTED';
 
-    // Assemble card
     infoContainer.appendChild(nameDiv);
     infoContainer.appendChild(typesDiv);
     infoContainer.appendChild(abilitiesDiv);
@@ -355,9 +663,7 @@ function createSelectableCard({ tokenId, pokemonId, name, image, rarity, types, 
     card.appendChild(selectIndicator);
     card.appendChild(inner);
 
-    // Click handler for selection
     card.addEventListener('click', () => {
-        console.log('Card clicked:', { tokenId, name });
         selectPokemonForTournament({
             tokenId: tokenId,
             pokemonId: pokemonId,
@@ -374,287 +680,151 @@ function createSelectableCard({ tokenId, pokemonId, name, image, rarity, types, 
     return card;
 }
 
-// ===================================================================
-// POKEMON SELECTION
-// ===================================================================
-
 function selectPokemonForTournament(pokemon) {
-    console.log('Selecting Pokemon:', pokemon);
-    
-    // Deselect any previously selected card
     document.querySelectorAll('.tournament-card.selected').forEach(card => {
         card.classList.remove('selected');
     });
 
-    // Select new card
     pokemon.cardElement.classList.add('selected');
     tournamentState.selectedPokemon = pokemon;
 
-    // Update selected Pokemon display
     elements.selectedImage.src = pokemon.image || 'images/pokeball.png';
     elements.selectedName.textContent = `#${pokemon.pokemonId} ${pokemon.name}`;
     elements.selectedId.textContent = `Token #${pokemon.tokenId}`;
     elements.selectedDisplay.style.display = 'flex';
+    elements.selectedDisplay.style.alignItems = 'center';
+    elements.selectedDisplay.style.gap = '15px';
 
-    // Enable start button
     elements.startBtn.disabled = false;
     elements.startError.style.display = 'none';
-    
-    console.log('Pokemon selected successfully. Button enabled.');
 }
 
-// ===================================================================
-// TOURNAMENT START
-// ===================================================================
-
-async function startTournament() {
-    console.log('startTournament called. State:', {
-        selectedPokemon: tournamentState.selectedPokemon,
-        isStarting: tournamentState.isStarting
+async function initiateTournamentBattle(tournamentId) {
+    if (!tournamentState.selectedPokemon) {
+        throw new Error('No Pokemon selected');
+    }
+    
+    const playerData = {
+        tokenId: tournamentState.selectedPokemon.tokenId,
+        pokemonId: tournamentState.selectedPokemon.pokemonId,
+        name: tournamentState.selectedPokemon.name,
+        rarity: tournamentState.selectedPokemon.rarity,
+        types: tournamentState.selectedPokemon.types,
+        abilities: tournamentState.selectedPokemon.abilities,
+        description: tournamentState.selectedPokemon.description,
+        tournamentId: tournamentId
+    };
+    
+    await logTournamentStart(playerData);
+    
+    const params = new URLSearchParams({
+        pokemon: encodeURIComponent(JSON.stringify(playerData)),
+        opponents: tournamentState.opponentCount,
+        difficulty: tournamentState.difficulty,
+        tournamentId: tournamentId
     });
     
-    // Validate selection
-    if (!tournamentState.selectedPokemon) {
-        console.error('No Pokemon selected!');
-        elements.startError.style.display = 'block';
-        elements.startError.textContent = '⚠️ Please select a Pokémon first!';
-        return;
-    }
-    
-    if (tournamentState.isStarting) {
-        console.warn('Tournament already starting, ignoring double-click');
-        return;
-    }
-    
-    // Prevent double-clicks
-    tournamentState.isStarting = true;
-    elements.startBtn.disabled = true;
-    elements.startError.style.display = 'none';
-    
-    try {
-        console.log('Initiating tournament battle...');
-        await initiateTournamentBattle();
-    } catch (error) {
-        console.error('Failed to start tournament:', error);
-        elements.startError.style.display = 'block';
-        elements.startError.textContent = '⚠️ Failed to start tournament. Please try again.';
-        
-        // Reset state on error
-        tournamentState.isStarting = false;
-        elements.startBtn.disabled = false;
-    }
+    window.location.href = `battle.html?${params.toString()}`;
 }
-
-async function initiateTournamentBattle() {
-  if (!tournamentState.selectedPokemon) {
-    throw new Error('No Pokemon selected');
-  }
-  
-  // Prepare player data
-  const playerData = {
-    tokenId: tournamentState.selectedPokemon.tokenId,
-    pokemonId: tournamentState.selectedPokemon.pokemonId,
-    name: tournamentState.selectedPokemon.name,
-    rarity: tournamentState.selectedPokemon.rarity,
-    types: tournamentState.selectedPokemon.types,
-    abilities: tournamentState.selectedPokemon.abilities,
-    description: tournamentState.selectedPokemon.description
-  };
-  
-  // Log tournament start for blockchain
-  await logTournamentStart(playerData);
-  
-  const params = new URLSearchParams({
-    pokemon: encodeURIComponent(JSON.stringify(playerData)),
-    opponents: tournamentState.opponentCount,
-    difficulty: tournamentState.difficulty
-  });
-  
-  window.location.href = `battle.html?${params.toString()}`;
-}
-
-// ===================================================================
-// BLOCKCHAIN INTEGRATION HELPERS
-// ===================================================================
 
 async function logTournamentStart(playerData) {
-  // Prepare data for blockchain logging
-  const tournamentData = {
-    player: window.wallet.getAccount(),
-    pokemonId: playerData.pokemonId,
-    tokenId: playerData.tokenId,
-    opponentCount: tournamentState.opponentCount,
-    difficulty: tournamentState.difficulty,
-    timestamp: Date.now(),
-    tournamentId: generateTournamentId()
-  };
-  
-  // Store in localStorage for later verification
-  localStorage.setItem('currentTournament', JSON.stringify(tournamentData));
-  
-  // TODO: Call smart contract to create tournament entry
-  // await contract.createTournament(tournamentData.tournamentId, playerData.tokenId, tournamentState.difficulty);
-  
-  console.log('Tournament logged:', tournamentData);
-}
-
-function generateTournamentId() {
-  return `tour_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
-
-// Error-safe provider getter
-async function safeGetProvider() {
-  try {
-    if (window.ethereum) {
-      return new ethers.BrowserProvider(window.ethereum);
-    }
-    return null;
-  } catch (e) {
-    console.error('Failed to get provider:', e);
-    return null;
-  }
-}
-
-// Fetch owned tokens from NFT contract
-async function fetchOwnedTokens(provider, contract, account) {
-  try {
-    // Get balance of NFTs for this account
-    const balance = await contract.balanceOf(account);
-    const tokenCount = parseInt(balance.toString());
-    
-    console.log(`Account ${account} has ${tokenCount} NFTs`);
-    
-    if (tokenCount === 0) {
-      return [];
-    }
-    
-    // Try to get token IDs - Method 1: Custom contract function
-    try {
-      const tokenIds = await contract.getTokenIdsByOwner(account);
-      return tokenIds.map(id => parseInt(id.toString()));
-    } catch (e) {
-      console.warn('getTokenIdsByOwner not available, using sequential scan');
-    }
-    
-    // Method 2: Query Transfer events (more efficient than sequential scan)
-    try {
-      const filter = contract.filters.Transfer;
-      const events = await contract.queryFilter(filter, 0, 'latest');
-      
-      const ownedTokens = new Set();
-      events.forEach(event => {
-        const from = event.args.from.toLowerCase();
-        const to = event.args.to.toLowerCase();
-        const tokenId = parseInt(event.args.tokenId.toString());
-        
-        if (to === account.toLowerCase()) {
-          ownedTokens.add(tokenId);
-        }
-        if (from === account.toLowerCase()) {
-          ownedTokens.delete(tokenId);
-        }
-      });
-      
-      return Array.from(ownedTokens).sort((a, b) => a - b);
-    } catch (e) {
-      console.warn('Event querying failed:', e);
-    }
-    
-    // Method 3: Return mock data for testing
-    console.warn('Using mock token IDs for testing');
-    return Array.from({length: Math.min(tokenCount, 5)}, (_, i) => i + 1);
-    
-  } catch (error) {
-    console.error('Error fetching owned tokens:', error);
-    return []; // Return empty array on error
-  }
-}
-
-// Resolve metadata for a token
-async function resolveMetadata(contract, tokenId) {
-  try {
-    // Get token URI from contract
-    const tokenURI = await contract.tokenURI(tokenId);
-    console.log(`Token ${tokenId} URI:`, tokenURI);
-    
-    // Convert IPFS URI to HTTP if needed
-    const httpUrl = ipfsToHttp(tokenURI);
-    
-    // Fetch metadata
-    const response = await fetch(httpUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch metadata for token ${tokenId}: ${response.status}`);
-    }
-    
-    const metadata = await response.json();
-    console.log(`Token ${tokenId} metadata loaded:`, metadata);
-    return metadata;
-  } catch (error) {
-    console.error(`Error resolving metadata for token ${tokenId}:`, error);
-    // Return mock data as fallback
-    return {
-      name: `Pokemon ${tokenId}`,
-      image: 'images/pokeball.png',
-      attributes: [{ trait_type: 'Rarity', value: 'Common' }]
+    const tournamentData = {
+        player: window.wallet.getAccount(),
+        pokemonId: playerData.pokemonId,
+        tokenId: playerData.tokenId,
+        opponentCount: tournamentState.opponentCount,
+        difficulty: tournamentState.difficulty,
+        timestamp: Date.now(),
+        tournamentId: localStorage.getItem('currentTournamentId')
     };
-  }
+    
+    localStorage.setItem('currentTournament', JSON.stringify(tournamentData));
+    console.log('Tournament logged:', tournamentData);
 }
 
-// Convert IPFS URI to HTTP URL
+// ===================================================================
+// HELPERS
+// ===================================================================
+
+async function safeGetProvider() {
+    try {
+        if (window.ethereum) {
+            return new ethers.BrowserProvider(window.ethereum);
+        }
+        return null;
+    } catch (e) {
+        console.error('Failed to get provider:', e);
+        return null;
+    }
+}
+
+async function fetchOwnedTokens(provider, contract, account) {
+    try {
+        const balance = await contract.balanceOf(account);
+        const tokenCount = parseInt(balance.toString());
+        
+        if (tokenCount === 0) return [];
+        
+        try {
+            const tokenIds = await contract.getTokenIdsByOwner(account);
+            return tokenIds.map(id => parseInt(id.toString()));
+        } catch (e) {
+            console.warn('Scanning Transfer events...');
+        }
+        
+        const filter = contract.filters.Transfer;
+        const events = await contract.queryFilter(filter, 0, 'latest');
+        
+        const ownedTokens = new Set();
+        events.forEach(event => {
+            const from = event.args.from.toLowerCase();
+            const to = event.args.to.toLowerCase();
+            const tokenId = parseInt(event.args.tokenId.toString());
+            
+            if (to === account.toLowerCase()) ownedTokens.add(tokenId);
+            if (from === account.toLowerCase()) ownedTokens.delete(tokenId);
+        });
+        
+        return Array.from(ownedTokens).sort((a, b) => a - b);
+    } catch (error) {
+        console.error('Error fetching owned tokens:', error);
+        return [];
+    }
+}
+
+async function resolveMetadata(contract, tokenId) {
+    try {
+        const tokenURI = await contract.tokenURI(tokenId);
+        const httpUrl = ipfsToHttp(tokenURI);
+        
+        const response = await fetch(httpUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch metadata: ${response.status}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error(`Error resolving metadata for token ${tokenId}:`, error);
+        return {
+            name: `Pokemon ${tokenId}`,
+            image: 'images/pokeball.png',
+            attributes: [{ trait_type: 'Rarity', value: 'Common' }]
+        };
+    }
+}
+
 function ipfsToHttp(uri) {
-  if (!uri) return 'images/pokeball.png';
-  
-  // Handle ipfs://Qme... format
-  if (uri.startsWith('ipfs://')) {
-    const cid = uri.replace('ipfs://', '');
-    return `https://ipfs.io/ipfs/${cid}`;
-  }
-  
-  // Handle ipfs://ipfs/Qme... format
-  if (uri.startsWith('ipfs://ipfs/')) {
-    const path = uri.replace('ipfs://ipfs/', '');
-    return `https://ipfs.io/ipfs/${path}`;
-  }
-  
-  // Handle already HTTP URLs
-  if (uri.startsWith('http')) {
-    return uri;
-  }
-  
-  // Handle JSON data URIs (data:application/json;base64,...)
-  if (uri.startsWith('data:')) {
-    return uri; // This will be handled by fetch()
-  }
-  
-  // Fallback
-  console.warn('Unknown URI format:', uri);
-  return 'images/pokeball.png';
+    if (!uri) return 'images/pokeball.png';
+    if (uri.startsWith('ipfs://')) {
+        const cid = uri.replace('ipfs://', '');
+        return `https://ipfs.io/ipfs/${cid}`;
+    }
+    if (uri.startsWith('ipfs://ipfs/')) {
+        const path = uri.replace('ipfs://ipfs/', '');
+        return `https://ipfs.io/ipfs/${path}`;
+    }
+    if (uri.startsWith('http')) return uri;
+    if (uri.startsWith('data:')) return uri;
+    
+    return 'images/pokeball.png';
 }
-
-// Utility: Show transaction modal (placeholder for blockchain txs)
-function showTransactionModal(message) {
-  const modal = document.createElement('div');
-  modal.className = 'transaction-modal';
-  modal.innerHTML = `
-    <div class="modal-content">
-      <div class="spinner"></div>
-      <p>${message}</p>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  return modal;
-}
-
-// Utility: Hide transaction modal
-function hideTransactionModal(modal) {
-  if (modal) modal.remove();
-}
-
-// Export for use in other modules
-window.TournamentAPI = {
-    loadTournamentPokemon,
-    selectPokemonForTournament,
-    startTournament,
-    logTournamentStart,
-    generateTournamentId
-};

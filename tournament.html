@@ -1,6 +1,6 @@
-
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -26,9 +26,13 @@
         <li class="nav-item"><a class="nav-link" href="marketplace.html">Marketplace</a></li>
         <li class="nav-item"><a class="nav-link" href="collection.html">Collection</a></li>
         <li class="nav-item"><a class="nav-link" href="transaction-history.html">Transactions</a></li>
-
+        <li class="nav-item"><a class="nav-link" href="profile.html">Profile</a></li>
         <li class="nav-item"><a class="nav-link active" href="tournament.html">Tournament</a></li>
-        <li class="nav-item"><div id="pctBalance" class="small-muted px-2">—</div></li>
+            <!-- <li class="nav-item"><a class="nav-link" href="admin-panel.html">admin</a></li> -->
+
+        <li class="nav-item">
+          <div id="pctBalance" class="small-muted px-2">—</div>
+        </li>
         <li class="nav-item"><button id="walletDisplay" class="btn btn-sm btn-outline-light">Connect</button></li>
       </ul>
     </div>
@@ -86,6 +90,13 @@
     <p id="startError" class="tournament-error" style="display: none;">
       Please select a Pokémon first!
     </p>
+    <div id="startError"
+      style="display: none; margin-top: 15px; padding: 10px; background: rgba(255, 0, 0, 0.2); border: 1px solid #ff0000; border-radius: 5px; color: #ff6b00;">
+      <!-- Error message will appear here -->
+    </div>
+    <button id="clearTournamentBtn" style="display: none; margin-top: 10px;" class="btn btn-warning">
+      🚨 Force Clear Active Tournament
+    </button>
 
     <!-- === POKEMON SELECTION GRID === -->
     <div class="tournament-section-title">
@@ -99,7 +110,7 @@
         <div class="spinner-border text-success" role="status"></div>
         <p style="margin-top: 15px; color: rgba(255,255,255,0.6);">Loading your collection...</p>
       </div>
-      
+
       <!-- No Pokemon Message -->
       <div id="noPokemonMessage" class="empty-collection" style="display: none; grid-column: 1/-1;">
         <h3>You don't own any Pokémon yet.</h3>
@@ -109,6 +120,231 @@
     </div>
   </main>
 
+  <!-- Tournament Confirmation Modal -->
+  <div class="modal fade" id="tournamentModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content"
+        style="background: linear-gradient(135deg, rgba(20,20,30,0.95), rgba(10,10,20,0.9)); border: 2px solid var(--primary); border-radius: 20px;">
+        <div class="modal-header" style="border-bottom: 1px solid rgba(0,255,157,0.3);">
+          <h5 class="modal-title" style="color: var(--primary); font-weight: 800;">Confirm Tournament Entry</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div
+            style="background: rgba(0,255,157,0.05); border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid rgba(0,255,157,0.2);">
+            <h6 style="color: var(--primary); margin-bottom: 15px; font-weight: 700;"> Entry Details</h6>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span>Entry Fee:</span>
+              <span style="color: var(--warning); font-weight: 800;" id="modalEntryFee">50 PKCN</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span>Difficulty:</span>
+              <span id="modalDifficulty">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span>Opponents:</span>
+              <span id="modalOpponents">-</span>
+            </div>
+          </div>
+
+          <div
+            style="background: rgba(0,196,255,0.05); border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid rgba(0,196,255,0.2);">
+            <h6 style="color: var(--info); margin-bottom: 15px; font-weight: 700;"> Estimated Rewards</h6>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span>Min Reward:</span>
+              <span style="color: var(--info);" id="modalMinReward">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span>Max Reward:</span>
+              <span style="color: var(--success); font-weight: 800;" id="modalMaxReward">-</span>
+            </div>
+          </div>
+
+          <div
+            style="background: rgba(255,217,61,0.05); border-radius: 12px; padding: 15px; border: 1px solid rgba(255,217,61,0.2);">
+            <p style="margin: 0; font-size: 0.85rem; color: rgba(255,255,255,0.8);">
+              💡 <strong>Tip:</strong> Win all matches for a Perfect Bonus! You must approve the entry fee before
+              starting.
+            </p>
+          </div>
+        </div>
+        <div class="modal-footer" style="border-top: 1px solid rgba(255,255,255,0.1);">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="confirmTournamentBtn"
+            style="background: linear-gradient(180deg, var(--primary), #00c474); border: none; font-weight: 800;">
+            <span id="confirmBtnText">Approve & Start</span>
+            <span class="spinner-border spinner-border-sm" id="confirmBtnSpinner" style="display: none;"></span>
+          </button>
+        </div>
+
+        <!-- === PROFILE MODAL (Previously profile.html) === -->
+        <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+          <div class="modal-dialog modal-xl modal-fullscreen-md-down">
+            <div class="modal-content profile-modal-content">
+              <!-- Modal Header -->
+              <div class="modal-header"
+                style="background: linear-gradient(135deg, var(--dark-bg) 0%, var(--darker-bg) 100%); border-bottom: 2px solid var(--primary);">
+                <h5 class="modal-title" id="profileModalLabel" style="color: var(--primary); font-weight: 800;">
+                  <i class="bi bi-person-badge"></i> Trainer Profile & Rewards
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                  aria-label="Close"></button>
+              </div>
+
+              <!-- Modal Body -->
+              <div class="modal-body"
+                style="background: linear-gradient(135deg, var(--dark-bg) 0%, var(--darker-bg) 100%); color: white; padding: 0;">
+                <!-- Profile Header -->
+                <div class="profile-header"
+                  style="text-align: center; padding: 20px 0; border-bottom: 2px solid var(--primary);">
+                  <h1 style="font-size: 1.8em; color: var(--primary); text-shadow: 0 0 10px rgba(0, 255, 157, 0.3);">
+                    Pokemon Trainer Profile
+                  </h1>
+                  <div class="wallet-address" id="profileWalletAddress"
+                    style="color: var(--secondary); font-family: monospace; margin-top: 5px;">
+                    Not Connected
+                  </div>
+                  <div class="mt-2">
+                    <span id="profileNetworkInfo" class="badge bg-secondary"></span>
+                    <button class="btn btn-sm btn-outline-primary ms-2" onclick="refreshProfileData()">
+                      <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Connection Status -->
+                <div id="profileConnectionStatus" class="error-box"
+                  style="display: none; margin: 15px; background: rgba(255,0,0,0.1); border: 1px solid #ff4444; border-radius: 8px; padding: 10px; color: #ff8888;">
+                  <h6><i class="bi bi-exclamation-triangle-fill"></i> Connection Issues</h6>
+                  <p id="profileConnectionMessage">Checking connection...</p>
+                  <button class="btn btn-sm btn-primary mt-1" onclick="connectWallet()">
+                    <i class="bi bi-plug"></i> Connect Wallet
+                  </button>
+                </div>
+
+                <!-- Main Content -->
+                <div class="container" style="padding: 20px; max-width: 1000px; margin: 0 auto;">
+                  <!-- PKCN Balance & Authorization -->
+                  <div class="balance-card"
+                    style="background: rgba(0,0,0,0.4); border: 2px solid var(--primary); border-radius: 15px; padding: 20px; margin: 20px 0; text-align: center;">
+                    <h3 style="color: var(--primary); margin-bottom: 15px;">PKCN Balance</h3>
+                    <div class="balance-amount" id="profilePkcnBalance"
+                      style="font-size: 2em; color: var(--primary); font-weight: bold;">
+                      0
+                    </div>
+
+                    <!-- Authorization Section -->
+                    <div class="authorization-section"
+                      style="background: rgba(255,170,0,0.1); border: 1px solid var(--secondary); border-radius: 8px; padding: 15px; margin-top: 20px;">
+                      <h6 style="color: var(--secondary);"><i class="bi bi-shield-check"></i> PKCN Authorization</h6>
+                      <p style="font-size: 0.9em; color: #aaa;">Tournament needs permission to transfer PKCN rewards</p>
+
+                      <div class="mb-2">
+                        <strong>Current Allowance:</strong>
+                        <span id="profileCurrentAllowance" class="text-warning">Checking...</span> PKCN
+                      </div>
+
+                      <div class="d-flex flex-wrap gap-2 justify-content-center mt-3">
+                        <button class="btn btn-sm btn-warning" onclick="checkProfileAllowance()">
+                          <i class="bi bi-arrow-repeat"></i> Check
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="approveProfilePKCN()" id="profileApproveBtn">
+                          <i class="bi bi-check-circle"></i> Approve
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="revokeProfilePKCN()" id="profileRevokeBtn"
+                          style="display: none;">
+                          <i class="bi bi-x-circle"></i> Revoke
+                        </button>
+                      </div>
+
+                      <div class="mt-2">
+                        <small class="text-muted">
+                          <i class="bi bi-info-circle"></i>
+                          Tournament Contract: <span id="profileTournamentContract">Loading...</span>
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Active Tournament Warning -->
+                  <div id="profileActiveTournamentAlert" class="active-tournament-alert"
+                    style="display: none; background: rgba(255,170,0,0.2); border: 1px solid var(--secondary); border-radius: 8px; padding: 15px; margin: 15px 0; text-align: center;">
+                    <h6 style="color: var(--secondary);"><i class="bi bi-exclamation-triangle-fill"></i> Active
+                      Tournament!</h6>
+                    <p style="font-size: 0.9em;">You have an active tournament that needs to be completed.</p>
+                    <div class="mt-2">
+                      <span id="profileActiveTournamentId" class="badge bg-warning text-dark me-2"></span>
+                      <button id="profileClaimActiveTournamentBtn" class="btn btn-sm btn-success">
+                        <i class="bi bi-cash"></i> Claim Reward
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Unclaimed Rewards Section -->
+                  <div class="section-card" id="profileClaimSection"
+                    style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,170,0,0.3); border-radius: 8px; padding: 20px; margin: 20px 0;">
+                    <h5 style="color: var(--secondary); text-align: center; margin-bottom: 15px;">
+                      <i class="bi bi-gift"></i> Unclaimed Tournament Rewards
+                    </h5>
+                    <div id="profileUnclaimedList" style="min-height: 100px;">
+                      <div class="no-data" style="text-align: center; padding: 20px; color: #666;">
+                        Connect wallet to see unclaimed rewards
+                      </div>
+                    </div>
+                    <div class="text-center mt-3">
+                      <strong>Total Unclaimed:</strong>
+                      <span id="profileTotalUnclaimed"
+                        style="color: var(--primary); font-weight: bold; margin-left: 5px;">0 PKCN</span>
+                    </div>
+                    <button id="profileClaimAllBtn" class="btn btn-warning mt-3" style="display: none; width: 100%;">
+                      <i class="bi bi-wallet2"></i> Claim All Rewards
+                    </button>
+                  </div>
+
+                  <!-- Quick Actions -->
+                  <div class="quick-actions"
+                    style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 15px; margin: 20px 0;">
+                    <h6 style="color: var(--primary); margin-bottom: 15px;">Quick Actions</h6>
+                    <div class="d-flex flex-wrap gap-2">
+                      <button class="btn btn-sm btn-info" onclick="debugProfileAllowance()">
+                        <i class="bi bi-bug"></i> Debug Allowance
+                      </button>
+                      <button class="btn btn-sm btn-info" onclick="getProfileActiveTournamentInfo()">
+                        <i class="bi bi-search"></i> Check Active
+                      </button>
+                      <button class="btn btn-sm btn-success" onclick="getProfileUnclaimedRewardsInfo()">
+                        <i class="bi bi-gift"></i> Check Rewards
+                      </button>
+                      <button class="btn btn-sm btn-secondary" onclick="testAllProfileFunctions()">
+                        <i class="bi bi-gear"></i> Test Functions
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Profile Toast Notification -->
+        <div class="toast-notification" id="profileToastNotification"
+          style="position: fixed; top: 20px; right: 20px; background: rgba(0,0,0,0.9); border: 2px solid var(--primary); border-radius: 10px; padding: 10px 15px; color: var(--primary); z-index: 1100; display: none; max-width: 300px;">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-check-circle-fill me-2"></i>
+            <span id="profileToastMessage">Claim successful!</span>
+          </div>
+        </div>
+
+        <!-- Profile Loading Spinner -->
+        <div id="profileLoadingSpinner" class="text-center"
+          style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1100; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px;">
+          <div class="spinner-border text-success" style="width: 2rem; height: 2rem;" role="status"></div>
+          <p class="mt-2" id="profileLoadingMessage" style="color: white;">Processing...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="./config.js"></script>
@@ -117,4 +353,5 @@
   <script src="collection.js"></script>
   <script src="tournament.js"></script>
 </body>
+
 </html>

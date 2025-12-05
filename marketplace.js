@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   'use strict';
 
-  let TOKEN_DECIMALS = 18;
+  let TOKEN_DECIMALS = 0;
 
   // ===== State Management =====
   let pendingPurchases = new Set();
@@ -308,7 +308,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log(`✅ Token decimals loaded: ${TOKEN_DECIMALS}`);
     } catch (e) {
       console.warn('Failed to fetch token decimals, defaulting to 18');
-      TOKEN_DECIMALS = 18;
+      TOKEN_DECIMALS = 0;
     }
   }
 

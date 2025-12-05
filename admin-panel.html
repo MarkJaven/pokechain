@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tournament Admin Panel</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #1a1a2e; color: white; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: rgba(0,0,0,0.3); padding: 20px; margin: 10px 0; border-radius: 10px; }
+        .btn { background: #00ff9d; color: black; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-danger { background: #ff4444; }
+        .btn-warning { background: #ffaa00; }
+        input { padding: 10px; width: 300px; margin: 5px; }
+        pre { background: #000; padding: 10px; overflow: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Tournament Admin Panel</h1>
+        
+        <div class="card">
+            <h3>1. Check PKCN Minter Status</h3>
+            <button class="btn" onclick="checkMinter()">Check Minter</button>
+            <div id="minterStatus"></div>
+        </div>
+        
+        <div class="card">
+            <h3>2. Set Tournament as PKCN Minter</h3>
+            <p>Only PKCN owner can do this</p>
+            <button class="btn btn-warning" onclick="setMinter()">Set Tournament as Minter</button>
+            <div id="setMinterResult"></div>
+        </div>
+        
+        <div class="card">
+            <h3>3. Fix Specific Tournament</h3>
+            <input type="text" id="fixTournamentId" placeholder="Enter Tournament ID">
+            <button class="btn" onclick="fixTournament()">Fix Tournament State</button>
+            <button class="btn btn-danger" onclick="forceExpireTournament()">Force Expire Tournament</button>
+        </div>
+        
+        <div class="card">
+            <h3>4. View All Tournaments for Address</h3>
+            <input type="text" id="playerAddress" placeholder="Player Address">
+            <button class="btn" onclick="viewPlayerTournaments()">View Player Data</button>
+            <pre id="playerData"></pre>
+        </div>
+        
+        <div class="card">
+            <h3>5. Manual Mint PKCN (for testing)</h3>
+            <input type="text" id="recipient" placeholder="Recipient Address">
+            <input type="number" id="amount" placeholder="Amount" value="100">
+            <button class="btn" onclick="manualMint()">Manual Mint PKCN</button>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        const CONFIG = window.CONTRACTS;
+        let provider, signer, pkcnContract, tournamentContract;
+        
+        async function init() {
+            if (!window.ethereum) {
+                alert("Install MetaMask");
+                return;
+            }
+            
+            await window.ethereum.request({ method: 'eth_requestAccounts' });
+            provider = new ethers.BrowserProvider(window.ethereum);
+            signer = await provider.getSigner();
+            
+            // PKCN Contract with minter function
+            const pkcnABI = [
+                "function minter() view returns (address)",
+                "function setMinter(address newMinter) external",
+                "function mint(address to, uint256 amount) external",
+                "function owner() view returns (address)",
+                "function balanceOf(address) view returns (uint256)"
+            ];
+            
+            // Tournament Contract
+            const tournamentABI = [
+                "function getTournamentData(string) view returns (address, uint256, string, uint256, uint256, bool, bool, uint256, uint256, uint256)",
+                "function expireTournament(string) external",
+                "function owner() view returns (address)",
+                "function getActiveTournament(address) view returns (string, bool, bool)",
+                "function getUnclaimedRewards(address) view returns (string[], uint256[])"
+            ];
+            
+            pkcnContract = new ethers.Contract(CONFIG.PKCN, pkcnABI, signer);
+            tournamentContract = new ethers.Contract(CONFIG.TOURNAMENT, tournamentABI, signer);
+            
+            console.log("Contracts initialized");
+        }
+        
+        async function checkMinter() {
+            await init();
+            try {
+                const minter = await pkcnContract.minter();
+                const tournamentAddr = CONFIG.TOURNAMENT;
+                const isMinter = minter.toLowerCase() === tournamentAddr.toLowerCase();
+                
+                document.getElementById('minterStatus').innerHTML = `
+                    <p><strong>Current PKCN Minter:</strong> ${minter}</p>
+                    <p><strong>Tournament Address:</strong> ${tournamentAddr}</p>
+                    <p><strong>Status:</strong> ${isMinter ? '✅ Tournament IS minter' : '❌ Tournament is NOT minter'}</p>
+                    ${!isMinter ? '<p style="color: #ff4444;">⚠️ This is why rewards cannot be claimed!</p>' : ''}
+                `;
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+        
+        async function setMinter() {
+            await init();
+            try {
+                // Check if caller is owner
+                const pkcnOwner = await pkcnContract.owner();
+                const caller = await signer.getAddress();
+                
+                if (pkcnOwner.toLowerCase() !== caller.toLowerCase()) {
+                    alert(`You are not PKCN owner!\nOwner: ${pkcnOwner}\nYou: ${caller}`);
+                    return;
+                }
+                
+                const confirm = window.confirm(`Set Tournament (${CONFIG.TOURNAMENT}) as PKCN minter?`);
+                if (!confirm) return;
+                
+                const tx = await pkcnContract.setMinter(CONFIG.TOURNAMENT);
+                document.getElementById('setMinterResult').innerHTML = "Transaction sent... waiting...";
+                
+                const receipt = await tx.wait();
+                if (receipt.status === 1) {
+                    document.getElementById('setMinterResult').innerHTML = "✅ Tournament set as minter successfully!";
+                    checkMinter(); // Refresh status
+                } else {
+                    document.getElementById('setMinterResult').innerHTML = "❌ Transaction failed";
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+        
+        async function fixTournament() {
+            await init();
+            const tournamentId = document.getElementById('fixTournamentId').value;
+            if (!tournamentId) {
+                alert("Enter tournament ID");
+                return;
+            }
+            
+            try {
+                const data = await tournamentContract.getTournamentData(tournamentId);
+                console.log("Tournament Data:", data);
+                
+                alert(`Tournament Data:\n
+                Player: ${data[0]}
+                TokenId: ${data[1]}
+                Difficulty: ${data[2]}
+                Wins: ${data[3]}/${data[4]}
+                IsComplete: ${data[5]}
+                RewardClaimed: ${data[6]}
+                EntryFee: ${data[7]}
+                FinalReward: ${data[8]}
+                StartBlock: ${data[9]}
+                `);
+                
+                // Check if it's complete but not claimed
+                if (data[5] && !data[6]) {
+                    const claimNow = confirm("This tournament is complete but unclaimed. Try claiming from profile page now.");
+                    if (claimNow) {
+                        window.open('profile.html', '_blank');
+                    }
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+        
+        async function forceExpireTournament() {
+            await init();
+            const tournamentId = document.getElementById('fixTournamentId').value;
+            if (!tournamentId) return;
+            
+            const confirm = window.confirm(`Force expire tournament ${tournamentId}? This will unlock the NFT but lose the entry fee.`);
+            if (!confirm) return;
+            
+            try {
+                const tx = await tournamentContract.expireTournament(tournamentId);
+                await tx.wait();
+                alert("✅ Tournament force expired");
+            } catch (error) {
+                alert(`Error: ${error.message}\n\nThis only works if tournament is actually expired (1000 blocks passed).`);
+            }
+        }
+        
+        async function viewPlayerTournaments() {
+            await init();
+            const address = document.getElementById('playerAddress').value || await signer.getAddress();
+            
+            try {
+                // Get active tournament
+                const [activeId, exists, expired] = await tournamentContract.getActiveTournament(address);
+                
+                // Get unclaimed rewards
+                const [tournamentIds, rewards] = await tournamentContract.getUnclaimedRewards(address);
+                
+                let output = `Player: ${address}\n\n`;
+                output += `ACTIVE TOURNAMENT:\n`;
+                output += `  ID: ${activeId || "None"}\n`;
+                output += `  Exists: ${exists}\n`;
+                output += `  Expired: ${expired}\n\n`;
+                
+                output += `UNCLAIMED REWARDS (${tournamentIds.length}):\n`;
+                for (let i = 0; i < tournamentIds.length; i++) {
+                    output += `  ${i+1}. ${tournamentIds[i]} - ${rewards[i]} PKCN\n`;
+                }
+                
+                document.getElementById('playerData').textContent = output;
+            } catch (error) {
+                document.getElementById('playerData').textContent = `Error: ${error.message}`;
+            }
+        }
+        
+        async function manualMint() {
+            await init();
+            const recipient = document.getElementById('recipient').value;
+            const amount = document.getElementById('amount').value;
+            
+            if (!recipient) {
+                alert("Enter recipient");
+                return;
+            }
+            
+            try {
+                // Check if we're minter
+                const minter = await pkcnContract.minter();
+                const caller = await signer.getAddress();
+                
+                if (minter.toLowerCase() !== caller.toLowerCase()) {
+                    alert(`You are not PKCN minter! Current minter: ${minter}`);
+                    return;
+                }
+                
+                const tx = await pkcnContract.mint(recipient, amount);
+                await tx.wait();
+                alert(`✅ Minted ${amount} PKCN to ${recipient}`);
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+        
+        // Initialize on load
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
