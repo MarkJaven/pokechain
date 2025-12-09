@@ -8,8 +8,18 @@ document.addEventListener('DOMContentLoaded', () => {
   let pendingTransactionHashes = new Set();
   let activeListings = new Map();
   let recentlyPurchasedListings = new Set();
+  let playerListingsLoaded = false;
 
-  // ===== Enhanced Transaction History (PRESERVED) =====
+  // ===== PAGINATION STATE =====
+  let officialCurrentPage = 1;
+  let officialItemsPerPage = 12;
+  let officialTotalPages = 1;
+  
+  let playerCurrentPage = 1;
+  let playerItemsPerPage = 12;
+  let playerTotalPages = 1;
+
+  // ===== Enhanced Transaction History =====
   class TransactionHistory {
     constructor() {
       this.key = 'pokechain_tx_history_v2';
@@ -56,7 +66,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     add(tx) {
-      // Check for duplicate (same type + nftId + timestamp within 1 min)
       const isDuplicate = this.notifications.some(existing =>
         existing.type === tx.type &&
         existing.nftId === tx.nftId &&
@@ -98,7 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (index !== -1) {
         const original = this.notifications[index];
         this.notifications[index] = { ...original, ...updates };
-        // Ensure nftId is preserved if not explicitly updated
         if (original.nftId && !updates.hasOwnProperty('nftId')) {
           this.notifications[index].nftId = original.nftId;
         }
@@ -177,12 +185,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initialize global txHistory (only once)
   if (!window.txHistory) {
     window.txHistory = new TransactionHistory();
   }
 
-  // ===== Utility Functions (ALL PRESERVED) =====
+  // ===== Utility Functions =====
   function ipfsToHttp(uri) {
     if (!uri) return '';
     return uri.startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + uri.slice(7) : uri;
@@ -247,9 +254,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const loader = document.getElementById('loader');
   const playerListingsLoader = document.getElementById('playerListingsLoader');
   const fetchMoreBtn = document.getElementById('fetchMoreBtn');
+  
+  // Unified filter elements (shared between marketplaces)
   const searchInput = document.getElementById('searchInput');
   const typeFilter = document.getElementById('typeFilter');
+  const rarityFilter = document.getElementById('rarityFilter');
   const sortSelect = document.getElementById('sortSelect');
+  const applyFiltersBtn = document.getElementById('applyFilters');
+
+  // Pagination elements
+  const prevPageBtn = document.getElementById('prevPage');
+  const nextPageBtn = document.getElementById('nextPage');
+  const pageInfoEl = document.getElementById('pageInfo');
+  
+  const playerPrevPageBtn = document.getElementById('playerPrevPage');
+  const playerNextPageBtn = document.getElementById('playerNextPage');
+  const playerPageInfoEl = document.getElementById('playerPageInfo');
 
   const pokeCache = new Map();
 
@@ -286,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const json = await res.json();
       json.results.filter(t => !['unknown', 'shadow'].includes(t.name)).forEach(t => {
         const opt = document.createElement('option');
-        opt.value = t.name;
+        opt.value = t.name; // Already lowercase from API
         opt.textContent = t.name;
         typeFilter.appendChild(opt);
       });
@@ -346,32 +366,236 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function renderOfficialGrid() {
-    if (!marketGrid) return;
+  // ===== UPDATED: Official Marketplace with Pagination & Rarity Filter =====
+// ===== FIX: Official Marketplace Grid - Use Player Marketplace Logic =====
+function renderOfficialGrid() {
+  if (!marketGrid) return;
 
-    const q = (searchInput?.value || '').trim().toLowerCase();
-    const type = (typeFilter?.value || '');
-    const sortBy = (sortSelect?.value || 'id');
+  const q = (searchInput?.value || '').trim().toLowerCase();
+  const type = (typeFilter?.value || '').toLowerCase(); // ✅ Normalize to lowercase
+  const rarity = (rarityFilter?.value || '');
+  const sortBy = (sortSelect?.value || 'id');
 
-    let items = Array.from(pokeCache.values());
-    if (q) items = items.filter(p => (p.name && p.name.includes(q)) || String(p.id) === q);
-    if (type) items = items.filter(p => p.types.some(t => t.type.name === type));
+  console.log(`🔍 Official marketplace filters - search: "${q}", type: "${type}", rarity: "${rarity}", sort: "${sortBy}"`);
 
-    items = items.map(p => ({
-      ...p,
-      price: computeMockPrice(p),
-      rarity: computeRarity(p.base_experience || 0)
-    }));
-
-    items.sort((a, b) => {
-      if (sortBy === 'id') return a.id - b.id;
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
-      if (sortBy === 'price') return a.price - b.price;
-      return 0;
+  let items = Array.from(pokeCache.values());
+  
+  // Apply search filter
+  if (q) {
+    items = items.filter(p => (p.name && p.name.toLowerCase().includes(q)) || String(p.id) === q);
+  }
+  
+  // ✅ FIX: Type filter with enhanced debugging (copied from player logic)
+  if (type) {
+    items = items.filter(p => {
+      const types = p.types || [];
+      
+      // Debug logging
+      console.log(`Pokemon #${p.id} ${p.name} types:`, types.map(t => t.type.name), 'Looking for:', type);
+      
+      // Ensure types is an array
+      if (!Array.isArray(types)) {
+        console.warn(`Invalid types data for Pokemon #${p.id}:`, types);
+        return false;
+      }
+      
+      // Check if any type matches (case-insensitive)
+      const hasMatch = types.some(t => {
+        if (!t || !t.type || typeof t.type.name !== 'string') return false;
+        return t.type.name.toLowerCase() === type;
+      });
+      
+      console.log(`Pokemon #${p.id} matches type ${type}:`, hasMatch);
+      return hasMatch;
     });
+  }
+  
+  // Apply rarity filter
+  if (rarity) {
+    items = items.filter(p => computeRarity(p.base_experience || 0) === rarity);
+  }
 
-    marketGrid.innerHTML = '';
-    items.forEach(p => marketGrid.appendChild(makeOfficialCard(p)));
+  // Transform items with computed values
+  items = items.map(p => ({
+    ...p,
+    price: computeMockPrice(p),
+    rarity: computeRarity(p.base_experience || 0)
+  }));
+
+  // Apply sorting
+  items.sort((a, b) => {
+    if (sortBy === 'id') return a.id - b.id;
+    if (sortBy === 'name') return a.name.localeCompare(b.name);
+    if (sortBy === 'price') return a.price - b.price;
+    return 0;
+  });
+
+  // Calculate pagination
+  officialTotalPages = Math.ceil(items.length / officialItemsPerPage) || 1;
+  const startIndex = (officialCurrentPage - 1) * officialItemsPerPage;
+  const endIndex = startIndex + officialItemsPerPage;
+  const paginatedItems = items.slice(startIndex, endIndex);
+
+  console.log(`📊 Rendering ${paginatedItems.length} items (page ${officialCurrentPage} of ${officialTotalPages})`);
+
+  // Render grid
+  marketGrid.innerHTML = '';
+  paginatedItems.forEach(p => marketGrid.appendChild(makeOfficialCard(p)));
+  
+  updatePaginationControls('official', items.length);
+}
+
+// ===== Player Marketplace Grid (unchanged, working version) =====
+async function renderPlayerMarketplaceGrid() {
+  if (!playerListingsGrid) return;
+
+  const q = (searchInput?.value || '').trim().toLowerCase();
+  const type = (typeFilter?.value || '').toLowerCase();
+  const rarity = (rarityFilter?.value || '');
+  const sortBy = (sortSelect?.value || 'id');
+
+  console.log(`🔍 Player marketplace filters - search: "${q}", type: "${type}", rarity: "${rarity}", sort: "${sortBy}"`);
+
+  let items = Array.from(activeListings.values());
+  
+  // Apply search filter
+  if (q) {
+    items = items.filter(listing => {
+      const meta = listing.metadata || {};
+      const name = meta.name?.toLowerCase() || '';
+      const tokenId = listing.tokenId?.toString() || '';
+      const pokemonId = meta.pokemonId?.toString() || '';
+      return name.includes(q) || tokenId.includes(q) || pokemonId.includes(q);
+    });
+  }
+  
+  // Apply type filter
+  if (type) {
+    items = items.filter(listing => {
+      const meta = listing.metadata || {};
+      const types = meta.types || [];
+      
+      // Debug logging
+      console.log(`Listing #${listing.tokenId} types:`, types, 'Looking for:', type);
+      
+      // Ensure types is an array
+      if (!Array.isArray(types)) {
+        console.warn(`Invalid types data for listing #${listing.tokenId}:`, types);
+        return false;
+      }
+      
+      // Check if any type matches (case-insensitive)
+      const hasMatch = types.some(t => {
+        if (!t || typeof t !== 'string') return false;
+        return t.toLowerCase() === type;
+      });
+      
+      console.log(`Listing #${listing.tokenId} matches type ${type}:`, hasMatch);
+      return hasMatch;
+    });
+  }
+  
+  // Apply rarity filter
+  if (rarity) {
+    items = items.filter(listing => {
+      const meta = listing.metadata || {};
+      return (meta.rarity || 'Common') === rarity;
+    });
+  }
+
+  // Apply sorting
+  items.sort((a, b) => {
+    const metaA = a.metadata || {};
+    const metaB = b.metadata || {};
+    
+    if (sortBy === 'id') return Number(a.tokenId) - Number(b.tokenId);
+    if (sortBy === 'name') {
+      const nameA = metaA.name || `Token #${a.tokenId}`;
+      const nameB = metaB.name || `Token #${b.tokenId}`;
+      return nameA.localeCompare(nameB);
+    }
+    if (sortBy === 'price') {
+      return Number(a.price) - Number(b.price);
+    }
+    return 0;
+  });
+
+  // Calculate pagination
+  playerTotalPages = Math.ceil(items.length / playerItemsPerPage) || 1;
+  const startIndex = (playerCurrentPage - 1) * playerItemsPerPage;
+  const endIndex = startIndex + playerItemsPerPage;
+  const paginatedItems = items.slice(startIndex, endIndex);
+
+  console.log(`📊 Rendering ${paginatedItems.length} items (page ${playerCurrentPage} of ${playerTotalPages})`);
+
+  // Render cards
+  playerListingsGrid.innerHTML = '';
+  const cardPromises = paginatedItems.map(listing => makeListingCard(listing));
+  const cards = await Promise.all(cardPromises);
+  cards.forEach(card => playerListingsGrid.appendChild(card));
+  
+  updatePaginationControls('player', items.length);
+}
+  // ===== NEW: Update Pagination Controls =====
+  function updatePaginationControls(marketplaceType, totalItems) {
+    if (marketplaceType === 'official') {
+      const totalPages = Math.ceil(totalItems / officialItemsPerPage) || 1;
+      
+      if (prevPageBtn) {
+        prevPageBtn.disabled = officialCurrentPage <= 1;
+        prevPageBtn.onclick = () => changePage('official', officialCurrentPage - 1);
+      }
+      
+      if (nextPageBtn) {
+        nextPageBtn.disabled = officialCurrentPage >= totalPages;
+        nextPageBtn.onclick = () => changePage('official', officialCurrentPage + 1);
+      }
+      
+      if (pageInfoEl) {
+        pageInfoEl.textContent = `Page ${officialCurrentPage} of ${totalPages}`;
+      }
+      
+      const paginationContainer = document.getElementById('paginationControls');
+      if (paginationContainer) {
+        paginationContainer.style.display = totalItems > officialItemsPerPage ? 'flex' : 'none';
+      }
+    } else if (marketplaceType === 'player') {
+      const totalPages = Math.ceil(totalItems / playerItemsPerPage) || 1;
+      
+      if (playerPrevPageBtn) {
+        playerPrevPageBtn.disabled = playerCurrentPage <= 1;
+        playerPrevPageBtn.onclick = () => changePage('player', playerCurrentPage - 1);
+      }
+      
+      if (playerNextPageBtn) {
+        playerNextPageBtn.disabled = playerCurrentPage >= totalPages;
+        playerNextPageBtn.onclick = () => changePage('player', playerCurrentPage + 1);
+      }
+      
+      if (playerPageInfoEl) {
+        playerPageInfoEl.textContent = `Page ${playerCurrentPage} of ${totalPages}`;
+      }
+      
+      const paginationContainer = document.getElementById('playerPaginationControls');
+      if (paginationContainer) {
+        paginationContainer.style.display = totalItems > playerItemsPerPage ? 'flex' : 'none';
+      }
+    }
+  }
+
+  // ===== NEW: Change Page =====
+  function changePage(marketplaceType, newPage) {
+    if (marketplaceType === 'official') {
+      const totalPages = Math.ceil(Array.from(pokeCache.values()).length / officialItemsPerPage) || 1;
+      if (newPage < 1 || newPage > totalPages) return;
+      officialCurrentPage = newPage;
+      renderOfficialGrid();
+    } else if (marketplaceType === 'player') {
+      const totalPages = Math.ceil(Array.from(activeListings.values()).length / playerItemsPerPage) || 1;
+      if (newPage < 1 || newPage > totalPages) return;
+      playerCurrentPage = newPage;
+      renderPlayerMarketplaceGrid();
+    }
   }
 
   async function fetchPokemonDescription(pokemonName) {
@@ -516,13 +740,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!window.wallet) throw new Error('Missing wallet.js helper');
   }
 
-  // ===== FIXED: Only approve if needed =====
   async function ensureTokenApproval(tokenAddress, spender, humanAmountOrRaw) {
     const signer = await window.wallet.getSigner();
     const token = new ethers.Contract(tokenAddress, window.ABIS.PKCN, signer);
     const owner = await window.wallet.getAccount();
 
-    // Check current allowance FIRST
     let rawAmount;
     if (typeof humanAmountOrRaw === 'bigint' || (typeof humanAmountOrRaw === 'string' && /^[0-9]+$/.test(humanAmountOrRaw))) {
       rawAmount = BigInt(humanAmountOrRaw.toString());
@@ -537,7 +759,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return true;
     }
 
-    console.log('🔄 Insufficient allowance, requesting approval...');
     const tx = await token.approve(spender, rawAmount);
     await tx.wait();
     return true;
@@ -575,11 +796,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const rawPrice = ethers.parseUnits(String(pokemon.price), TOKEN_DECIMALS);
       const buyerAddress = await window.wallet.getAccount();
 
-      // Record token count BEFORE
       const provider = await window.wallet.getProvider();
       const nft = new ethers.Contract(nftAddr, window.ABIS.POKEMON_NFT, provider);
       const balanceBefore = await nft.balanceOf(buyerAddress).catch(() => 0);
-      console.log(`📊 Balance before: ${balanceBefore.toString()}`);
 
       txId = window.txHistory.add({
         type: 'purchase',
@@ -606,7 +825,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const signer = await window.wallet.getSigner();
       const marketplace = new ethers.Contract(marketplaceAddr, window.ABIS.MARKETPLACE, signer);
 
-      // Execute purchase
       const tx = await callWithManualGas(marketplace, 'buyPokemon', [
         pokemon.name,
         pokemon.rarity,
@@ -621,9 +839,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       const receipt = await tx.wait();
-      console.log('✅ Receipt received. Logs:', receipt.logs.length);
 
-      // ===== ROBUST TOKEN ID EXTRACTION =====
       let mintedTokenId = null;
       let gasFee = '0';
 
@@ -633,57 +849,37 @@ document.addEventListener('DOMContentLoaded', () => {
           receipt.gasPrice.toString()
         );
 
-        // Method 1: Check event topics directly (most reliable for indexed events)
         const pokemonMintedTopic = ethers.id("PokemonMinted(uint256,address,string,string)");
         const transferTopic = ethers.id("Transfer(address,address,uint256)");
 
-        console.log(`🔍 Scanning ${receipt.logs.length} logs for topics...`);
-        console.log(`Looking for: ${pokemonMintedTopic} or ${transferTopic}`);
-
         for (const log of receipt.logs) {
-          // Only check logs from the NFT contract
           if (log.address.toLowerCase() !== nftAddr.toLowerCase()) {
-            console.log(`⏭️ Skipping log from ${log.address}`);
             continue;
           }
 
-          console.log(`📜 Log from NFT contract. Topic: ${log.topics[0]}`);
-
-          // Check for PokemonMinted event
           if (log.topics[0] === pokemonMintedTopic) {
-            // tokenId is indexed, so it's in topics[1]
             mintedTokenId = BigInt(log.topics[1]).toString();
-            console.log(`✅ Found PokemonMinted event! Token ID: ${mintedTokenId}`);
             break;
           }
 
-          // Fallback: Check for Transfer event (also emitted on mint)
           if (log.topics[0] === transferTopic && !mintedTokenId) {
-            // tokenId is indexed, in topics[3] for Transfer
             mintedTokenId = BigInt(log.topics[3]).toString();
-            console.log(`✅ Found Transfer event! Token ID: ${mintedTokenId}`);
-            // Don't break - PokemonMinted is more reliable if it appears later
           }
         }
 
-        // Method 2: If still not found, query contract directly
         if (!mintedTokenId) {
-          console.warn('⚠️ Could not parse from logs, querying contract...');
           const nftWithSigner = new ethers.Contract(nftAddr, window.ABIS.POKEMON_NFT, signer);
           const balanceAfter = await nftWithSigner.balanceOf(buyerAddress);
 
           if (balanceAfter > balanceBefore) {
-            // Get the newest token
             const newIndex = balanceAfter - 1n;
             mintedTokenId = await nftWithSigner.tokenOfOwnerByIndex(buyerAddress, newIndex);
             mintedTokenId = mintedTokenId.toString();
-            console.log(`✅ Queried token ID: ${mintedTokenId}`);
           } else {
             console.error('❌ Balance did not increase after mint');
           }
         }
 
-        // Update with found ID (or null if truly unknown)
         window.txHistory.update(txId, {
           status: 'success',
           message: `Successfully purchased ${pokemon.name}!`,
@@ -705,7 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       } catch (parseErr) {
         console.error('❌ Receipt processing error:', parseErr);
-        // Transaction likely succeeded even if parsing failed
+
         window.txHistory.update(txId, {
           status: 'success',
           message: `Successfully purchased ${pokemon.name}!`,
@@ -752,7 +948,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ===== Player Listings Functions (ALL PRESERVED) =====
+  // ===== Player Listings Functions =====
   window.fetchActiveListingsFromChain = async function () {
     try {
       assertConfig();
@@ -883,6 +1079,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // ===== UPDATED: Enhanced render function with metadata caching =====
   async function renderPlayerListings() {
     try {
       if (!playerListingsGrid) return;
@@ -893,39 +1090,87 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const listings = await window.fetchActiveListingsFromChain();
 
-      const uniqueListings = new Map();
-      listings.forEach(listing => {
-        const existing = uniqueListings.get(listing.tokenId);
-        if (!existing || listing.blockNumber > existing.blockNumber) {
-          uniqueListings.set(listing.tokenId, listing);
+      // Fetch metadata for all listings in parallel
+      const metadataPromises = listings.map(async (listing) => {
+        try {
+          const provider = await window.wallet.getProvider();
+          const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT, window.ABIS.POKEMON_NFT, provider);
+          const uri = await nft.tokenURI(listing.tokenId);
+          const meta = await parseTokenURI(uri);
+          
+          if (meta) {
+            let pokemonData = null;
+            try {
+              const name = meta.name?.toLowerCase().trim();
+              if (name) {
+                const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
+                if (res.ok) pokemonData = await res.json();
+              }
+            } catch (e) {
+              console.warn(`Couldn't fetch PokeAPI data for ${meta.name}`);
+            }
+
+            let description = 'A mysterious Pokémon with unknown abilities.';
+            try {
+              const speciesRes = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${meta.name.toLowerCase()}`);
+              if (speciesRes.ok) {
+                const speciesData = await speciesRes.json();
+                const flavorText = speciesData.flavor_text_entries?.find(e => e.language.name === 'en');
+                if (flavorText) {
+                  description = flavorText.flavor_text.replace(/\n|\f/g, ' ');
+                }
+              }
+            } catch (e) {
+              console.warn(`Failed to fetch description for ${meta.name}`);
+            }
+
+            // ✅ Ensure types are stored as lowercase strings
+            const types = pokemonData?.types?.map(t => t.type.name.toLowerCase()) || [];
+            
+            listing.metadata = {
+              name: meta.name || `Token #${listing.tokenId}`,
+              image: meta.image ? ipfsToHttp(meta.image) : 'images/pokeball.png',
+              rarity: meta.attributes?.find(a => 
+                a.trait_type?.toLowerCase() === 'rarity'
+              )?.value || 'Common',
+              pokemonId: pokemonData?.id || listing.tokenId,
+              types: types, // Store normalized types
+              abilities: pokemonData?.abilities?.slice(0, 3).map(a => a.ability.name) || [],
+              description: description
+            };
+            
+            console.log(`📦 Loaded metadata for token #${listing.tokenId}:`, {
+              name: listing.metadata.name,
+              types: listing.metadata.types,
+              rarity: listing.metadata.rarity
+            });
+          }
+        } catch (e) {
+          console.warn(`Failed to load metadata for token #${listing.tokenId}:`, e);
+          listing.metadata = {
+            name: `Token #${listing.tokenId}`,
+            image: 'images/pokeball.png',
+            rarity: 'Common',
+            pokemonId: listing.tokenId,
+            types: [], // Empty types array
+            abilities: [],
+            description: 'A mysterious Pokémon with unknown abilities.'
+          };
         }
+        return listing;
       });
 
-      const finalListings = Array.from(uniqueListings.values());
+      const listingsWithMetadata = await Promise.all(metadataPromises);
 
-      const countEl = document.getElementById('playerListingCount');
-      if (countEl) {
-        countEl.textContent = finalListings.length > 0 ? `${finalListings.length} available` : 'No listings yet';
-      }
+      activeListings.clear();
+      listingsWithMetadata.forEach(listing => {
+        activeListings.set(listing.listingId, listing);
+      });
 
-      if (finalListings.length === 0) {
-        console.log('⚠️ No active player listings found');
-        if (playerListingsLoader) playerListingsLoader.style.display = 'none';
-        return;
-      }
-
-      for (const listing of finalListings) {
-        if (playerListingsGrid.querySelector(`[data-listing-id="${listing.listingId}"]`)) {
-          console.log(`⚠️ Skipping duplicate listing #${listing.listingId}`);
-          continue;
-        }
-
-        const card = await makeListingCard(listing);
-        playerListingsGrid.appendChild(card);
-      }
+      playerCurrentPage = 1;
+      renderPlayerMarketplaceGrid();
 
       if (playerListingsLoader) playerListingsLoader.style.display = 'none';
-      console.log(`Rendered ${finalListings.length} active listings`);
 
     } catch (e) {
       console.error('renderPlayerListings failed:', e);
@@ -933,69 +1178,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ===== UPDATED: Make listing card with metadata support =====
   async function makeListingCard(listing) {
-    let nameText = `Token #${listing.tokenId}`;
-    let rarity = 'Common';
-    let pokemonId = listing.tokenId;
-    let imageUrl = 'images/pokeball.png';
-    let types = [];
-    let abilities = '';
-    let description = 'A mysterious Pokémon with unknown abilities.';
-
-    try {
-      assertConfig();
-      await window.wallet.ensureProvider();
-      const provider = await window.wallet.getProvider();
-      const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT, window.ABIS.POKEMON_NFT, provider);
-
-      const uri = await nft.tokenURI(listing.tokenId);
-      const meta = await parseTokenURI(uri);
-
-      if (meta) {
-        if (meta.image) imageUrl = ipfsToHttp(meta.image);
-        if (meta.name) nameText = meta.name.charAt(0).toUpperCase() + meta.name.slice(1);
-
-        try {
-          const pokeRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${meta.name.toLowerCase()}`);
-          if (pokeRes.ok) {
-            const pokeData = await pokeRes.json();
-            pokemonId = pokeData.id;
-            types = pokeData.types?.map(t => t.type.name) || [];
-            const abilityNames = pokeData.abilities?.slice(0, 3).map(a => a.ability.name) || [];
-            abilities = abilityNames.length > 0 ? `Abilities: ${abilityNames.join(', ')}` : '';
-          }
-
-          const speciesRes = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${meta.name.toLowerCase()}`);
-          if (speciesRes.ok) {
-            const speciesData = await speciesRes.json();
-            const flavorText = speciesData.flavor_text_entries?.find(e => e.language.name === 'en');
-            if (flavorText) {
-              description = flavorText.flavor_text.replace(/\n|\f/g, ' ');
-            }
-          }
-        } catch (e) {
-          console.warn(`Couldn't fetch PokeAPI data for ${meta.name}`);
-        }
-
-        if (meta.attributes && Array.isArray(meta.attributes)) {
-          const rarityAttr = meta.attributes.find(a =>
-            a.trait_type?.toLowerCase() === 'rarity'
-          );
-          if (rarityAttr?.value) {
-            rarity = String(rarityAttr.value).trim();
-          }
-        }
-      }
-    } catch (e) {
-      console.error(`Failed to load metadata for token #${listing.tokenId}:`, e);
-    }
+    const meta = listing.metadata || {};
+    const nameText = meta.name || `Token #${listing.tokenId}`;
+    const rarity = meta.rarity || 'Common';
+    const pokemonId = meta.pokemonId || listing.tokenId;
+    const imageUrl = meta.image || 'images/pokeball.png';
+    const types = meta.types || [];
+    const abilities = meta.abilities || [];
+    const description = meta.description || 'A mysterious Pokémon with unknown abilities.';
 
     const rarityClass = rarityClassLabel(rarity);
     const card = document.createElement('div');
     card.className = `market-card listed ${rarityClass}`;
     card.dataset.listingId = listing.listingId;
 
-    // ✅ FIX: Check ownership ON CLICK, not during render
     card.addEventListener('click', () => {
       const currentUser = window.wallet?.getAccount?.()?.toLowerCase();
       const isOwner = currentUser === listing.seller.toLowerCase();
@@ -1040,7 +1238,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const abilitiesDiv = document.createElement('div');
     abilitiesDiv.className = 'abilities';
-    abilitiesDiv.textContent = abilities || `NFT Token #${listing.tokenId}`;
+    abilitiesDiv.textContent = abilities.length > 0 ? `Abilities: ${abilities.join(', ')}` : `NFT Token #${listing.tokenId}`;
 
     const descriptionDiv = document.createElement('div');
     descriptionDiv.className = 'pokemon-description';
@@ -1063,7 +1261,6 @@ document.addEventListener('DOMContentLoaded', () => {
     card.appendChild(nftIdBadge);
     card.appendChild(inner);
 
-    // ✅ ADD VISUAL INDICATOR if user owns this (optional but helpful)
     const currentUser = window.wallet?.getAccount?.()?.toLowerCase();
     if (currentUser === listing.seller.toLowerCase()) {
       card.style.border = '2px solid #4CAF50';
@@ -1076,7 +1273,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function showPlayerListingModal(listing, pokemonName, pokemonId, rarity, isOwner, tokenId) {
     if (isOwner) {
-      // ✅ FULL DELIST LOGIC with tokenId parameter
       const confirmed = await window.txModal.confirm({
         title: 'Cancel Listing',
         message: `Remove your ${pokemonName} from the marketplace?`,
@@ -1118,7 +1314,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ✅ CORRECT: Single, unified buyListedOnChain function
   async function buyListedOnChain(listingId, priceRaw, pokemonName, pokemonId, seller, tokenId) {
     const txKey = `buyListed-${listingId}-${Date.now()}`;
     if (pendingTransactionHashes.has(txKey)) {
@@ -1160,7 +1355,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const priceBig = BigInt(priceRaw.toString());
       const humanPrice = ethers.formatUnits(priceBig, TOKEN_DECIMALS);
 
-      // ✅ Store nftId immediately, not just in details
       txId = window.txHistory.add({
         type: 'marketplace_purchase',
         title: 'Buy Listed Pokémon',
@@ -1197,7 +1391,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const receipt = await tx.wait();
 
-      // Safe receipt parsing
       let gasFee = '0';
       try {
         gasFee = TransactionHistory.formatGas(
@@ -1208,7 +1401,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn('Gas calculation failed:', e);
       }
 
-      // ✅ Update with same nftId to ensure it's preserved
       window.txHistory.update(txId, {
         status: 'success',
         message: `Successfully purchased ${pokemonName}!`,
@@ -1297,7 +1489,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // FIXED delistPokemon with nftId field added
   async function delistPokemon(listingId, pokemonName, pokemonId, tokenId) {
     const txKey = `delist-${listingId}-${Date.now()}`;
     if (pendingTransactionHashes.has(txKey)) {
@@ -1422,168 +1613,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ===== LISTING TRANSACTION HISTORY with nftId preservation =====
-  // ✅ FIXED: Properly await signer
-  async function listPokemonOnChain(tokenId, pokemonName, pokemonId, rarity, price) {
-    const txKey = `list-${tokenId}-${Date.now()}`;
-    if (pendingTransactionHashes.has(txKey)) {
-      console.warn('⚠️ Duplicate listing prevented');
-      return;
-    }
-    pendingTransactionHashes.add(txKey);
-
-    let txId = null;
-    try {
-      assertConfig();
-      const marketplaceAddr = window.CONTRACTS.MARKETPLACE;
-      const nftAddr = window.CONTRACTS.POKEMON_NFT;
-
-      // Ensure wallet is connected
-      if (!window.wallet.getAccount()) {
-        await window.wallet.connectWallet();
-      }
-
-      // ✅ CRITICAL FIX: Get signer and address properly
-      const signer = await window.wallet.getSigner();
-      if (!signer) throw new Error("Failed to get signer");
-
-      const sellerAddress = await signer.getAddress();
-      const priceBig = ethers.parseUnits(String(price), TOKEN_DECIMALS);
-
-      // Check current approvals
-      const nft = new ethers.Contract(nftAddr, window.ABIS.POKEMON_NFT, signer);
-      const approved = await nft.getApproved(tokenId);
-
-      if (approved.toLowerCase() !== marketplaceAddr.toLowerCase()) {
-        window.txModal.transaction({
-          title: 'Approving Marketplace',
-          message: 'Please approve the marketplace to handle your NFT...'
-        });
-
-        const approveTx = await nft.approve(marketplaceAddr, tokenId);
-        await approveTx.wait();
-      }
-
-      // Add pending transaction to history
-      txId = window.txHistory.add({
-        type: 'list',
-        title: 'List Pokémon',
-        message: `Listing ${pokemonName} for sale`,
-        status: 'pending',
-        tokenAmount: `${price} PKCN`,
-        fromAddress: sellerAddress,
-        toAddress: null,
-        nftId: tokenId,
-        details: {
-          pokemonId: pokemonId,
-          pokemonName: pokemonName,
-          tokenId: tokenId,
-          rarity: rarity,
-          price: price
-        }
-      });
-
-      console.log(`📋 Listing transaction added to history with ID: ${txId}, nftId: ${tokenId}`);
-
-      window.txModal.transaction({
-        title: 'Creating Listing',
-        message: 'Please confirm the transaction in your wallet...'
-      });
-
-      const marketplace = new ethers.Contract(marketplaceAddr, window.ABIS.MARKETPLACE, signer);
-      const tx = await marketplace.listPokemon(BigInt(tokenId), priceBig);
-
-      pendingTransactionHashes.delete(txKey);
-      window.txHistory.update(txId, {
-        hash: tx.hash,
-        message: 'Transaction submitted, waiting for confirmation...'
-      });
-
-      const receipt = await tx.wait();
-
-      // Parse listingId from logs
-      let listingId = null;
-      let gasFee = '0';
-
-      try {
-        gasFee = TransactionHistory.formatGas(
-          receipt.gasUsed.toString(),
-          receipt.gasPrice.toString()
-        );
-
-        const listTopic = ethers.id("PokeListed(uint256,uint256,address,uint256)");
-        console.log(`🔍 Parsing logs for topic: ${listTopic}`);
-        for (const log of receipt.logs) {
-          console.log(`📜 Log topic: ${log.topics[0]}`);
-          if (log.topics[0] === listTopic) {
-            listingId = BigInt(log.topics[1]).toString();
-            console.log(`✅ Found PokeListed event! Listing ID: ${listingId}`);
-            break;
-          }
-        }
-
-        if (!listingId) {
-          console.warn('⚠️ Could not find PokeListed event in logs');
-        }
-      } catch (e) {
-        console.error('❌ Log parsing failed:', e);
-      }
-
-      // Get the original transaction details before updating
-      const originalTx = window.txHistory.notifications.find(n => n.id === txId);
-      const originalNftId = originalTx?.nftId || tokenId;
-
-      window.txHistory.update(txId, {
-        status: 'success',
-        message: `Successfully listed ${pokemonName}!`,
-        hash: tx.hash,
-        gasFee: `${gasFee} ETH`,
-        nftId: originalNftId,
-        details: {
-          ...originalTx?.details,
-          listingId: listingId
-        }
-      });
-
-      console.log(`✅ Listing transaction completed: ${txId}, nftId preserved: ${originalNftId}`);
-
-      window.txModal.success(
-        'Listing Created!',
-        `Your ${pokemonName} has been listed for sale! ${listingId ? `Listing ID: #${listingId}` : ''}`,
-        () => {
-          renderPlayerListings();
-        }
-      );
-    } catch (e) {
-      console.error('❌ listPokemonOnChain failed:', e);
-      let message = 'Failed to create listing';
-      if (e?.code === 4001 || e?.code === 'ACTION_REJECTED') message = 'Transaction was rejected';
-      else if (e?.reason) message = e.reason;
-      else if (e?.message) message = e.message;
-
-      if (txId) {
-        window.txHistory.update(txId, {
-          status: 'failed',
-          message: message,
-          nftId: tokenId
-        });
-      }
-
-      window.txModal.error('Listing Failed', message);
-    } finally {
-      pendingTransactionHashes.delete(txKey);
-      if (txId) {
-        setTimeout(() => window.txHistory.markAsRead(txId), 3000);
-      }
-    }
-  }
-
-  // ✅ FIXED: Comprehensive transaction sync - replaces the old syncPastListings function
+  // ===== FIX: Comprehensive transaction sync =====
   async function syncAllPastTransactions() {
     try {
       if (!window.wallet.getAccount()) return;
 
-      // Use new sync key to force re-sync with enhanced logic
       const syncKey = `pokechain_tx_sync_all_${window.wallet.getAccount().toLowerCase()}`;
       const hasSynced = localStorage.getItem(syncKey);
       if (hasSynced) {
@@ -1605,24 +1639,17 @@ document.addEventListener('DOMContentLoaded', () => {
       );
 
       const currentUser = window.wallet.getAccount().toLowerCase();
-      const fromBlock = -10000; // Last 10k blocks
+      const fromBlock = -10000;
 
-      // Query all events in parallel for better performance
-      console.log('📡 Querying blockchain events...');
       const [userListLogs, allDelistLogs, allBuyLogs, userMintLogs] = await Promise.all([
-        // User's list events
         marketplace.queryFilter(marketplace.filters.PokeListed(null, null, currentUser), fromBlock, 'latest'),
-        // All delist events (we'll filter later)
         marketplace.queryFilter(marketplace.filters.PokeDelisted(null), fromBlock, 'latest'),
-        // All marketplace purchase events (we'll filter later)
         marketplace.queryFilter(marketplace.filters.ListingBought(null, null), fromBlock, 'latest'),
-        // User's mint events (official purchases)
         nft.queryFilter(nft.filters.PokemonMinted(null, currentUser), fromBlock, 'latest')
       ]);
 
       console.log(`📜 Found ${userListLogs.length} list, ${allDelistLogs.length} delist, ${allBuyLogs.length} buy, ${userMintLogs.length} mint events`);
 
-      // Build a comprehensive map of all listings for cross-reference
       const allListingsMap = new Map();
       const allListLogs = await marketplace.queryFilter(marketplace.filters.PokeListed(), fromBlock, 'latest');
       for (const log of allListLogs) {
@@ -1639,7 +1666,6 @@ document.addEventListener('DOMContentLoaded', () => {
       let addedCount = 0;
       const txExists = (hash) => window.txHistory.notifications.some(tx => tx.hash === hash);
 
-      // 1️⃣ Process LIST events (user as seller)
       for (const log of userListLogs) {
         if (txExists(log.transactionHash)) continue;
         try {
@@ -1673,7 +1699,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // 2️⃣ Process DELIST events (user as seller)
       for (const log of allDelistLogs) {
         if (txExists(log.transactionHash)) continue;
         try {
@@ -1709,7 +1734,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // 3️⃣ Process MARKETPLACE PURCHASE events (user as buyer)
       for (const log of allBuyLogs) {
         if (txExists(log.transactionHash)) continue;
         try {
@@ -1748,13 +1772,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // 4️⃣ Process OFFICIAL PURCHASE events (user as buyer)
       for (const log of userMintLogs) {
         if (txExists(log.transactionHash)) continue;
         try {
           const { tokenId, owner, name, rarity } = log.args;
           
-          // Try to parse price from transaction input
           const tx = await provider.getTransaction(log.transactionHash);
           let price = '0';
           try {
@@ -1796,7 +1818,6 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem(syncKey, 'true');
       console.log(`✅ Sync complete: ${addedCount} new transactions added to history`);
 
-      // Refresh UI components
       if (window.txHistoryPage) {
         window.txHistoryPage.render(window.txHistoryPage.currentFilter || 'all');
       }
@@ -1812,7 +1833,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ✅ Helper function to get Pokemon metadata (PRESERVED)
   async function getPokemonMetadata(tokenId, provider) {
     try {
       const nft = new ethers.Contract(window.CONTRACTS.POKEMON_NFT, window.ABIS.POKEMON_NFT, provider);
@@ -1821,7 +1841,6 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (!meta) return null;
       
-      // Try to get additional PokeAPI data
       let pokemonData = null;
       try {
         const name = meta.name?.toLowerCase().trim();
@@ -1861,26 +1880,73 @@ document.addEventListener('DOMContentLoaded', () => {
       togglePlayer.classList.remove('active');
       officialSection.style.display = 'block';
       playerSection.style.display = 'none';
+      officialCurrentPage = 1;
+      renderOfficialGrid();
     } else {
       togglePlayer.classList.add('active');
       toggleOfficial.classList.remove('active');
       officialSection.style.display = 'none';
       playerSection.style.display = 'block';
+      playerCurrentPage = 1;
 
       if (!playerListingsLoaded) {
         renderPlayerListings();
         playerListingsLoaded = true;
+      } else {
+        renderPlayerMarketplaceGrid();
       }
     }
   }
 
+  // ===== FIX: Unified Filter Handler with proper event delegation =====
   function attachHandlers() {
-    searchInput?.addEventListener('input', () => renderOfficialGrid());
-    typeFilter?.addEventListener('change', () => renderOfficialGrid());
-    sortSelect?.addEventListener('change', () => renderOfficialGrid());
-
+    // Mode toggle buttons
     document.getElementById('toggleOfficial')?.addEventListener('click', () => setMarketplaceMode('official'));
     document.getElementById('togglePlayer')?.addEventListener('click', () => setMarketplaceMode('player'));
+    
+    // ✅ FIX: Apply Filters button - handles both marketplace modes
+    document.getElementById('applyFilters')?.addEventListener('click', () => {
+      const mode = document.getElementById('officialMarketSection').style.display !== 'none' ? 'official' : 'player';
+      
+      if (mode === 'official') {
+        officialCurrentPage = 1;
+        renderOfficialGrid();
+      } else {
+        playerCurrentPage = 1;
+        renderPlayerMarketplaceGrid();
+      }
+      
+      console.log(`🔍 Filters applied for ${mode} marketplace`);
+    });
+
+    // ✅ FIX: Real-time filter updates on input change (debounced)
+    let filterTimeout;
+    const debouncedFilter = () => {
+      clearTimeout(filterTimeout);
+      filterTimeout = setTimeout(() => {
+        const mode = document.getElementById('officialMarketSection').style.display !== 'none' ? 'official' : 'player';
+        if (mode === 'official') {
+          officialCurrentPage = 1;
+          renderOfficialGrid();
+        } else {
+          playerCurrentPage = 1;
+          renderPlayerMarketplaceGrid();
+        }
+      }, 300); // 300ms debounce
+    };
+
+    searchInput?.addEventListener('input', debouncedFilter);
+    typeFilter?.addEventListener('change', debouncedFilter);
+    rarityFilter?.addEventListener('change', debouncedFilter);
+    sortSelect?.addEventListener('change', debouncedFilter);
+
+    // Enter key support for search input
+    searchInput?.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(filterTimeout); // Cancel debounce
+        document.getElementById('applyFilters')?.click();
+      }
+    });
   }
 
   function saveRecentlyPurchased() {
@@ -1934,7 +2000,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ===== Initialization (PRESERVED) =====
+  // ===== Initialization =====
   (async function init() {
     console.log('🚀 Initializing marketplace...');
     await cleanupLegacyListings();
@@ -1945,7 +2011,6 @@ document.addEventListener('DOMContentLoaded', () => {
     attachHandlers();
     setupEventListeners();
 
-    // Sync past listings after a delay
     setTimeout(() => {
       console.log('⏰ Starting sync of past listings...');
       syncAllPastTransactions();
@@ -1953,21 +2018,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.txHistory.updateUI();
 
-    // Initial render of player listings
     setTimeout(() => {
       console.log('🎨 Initial render of player listings...');
       renderPlayerListings();
       playerListingsLoaded = true;
     }, 1500);
 
-    // Save recently purchased listings periodically
     setInterval(saveRecentlyPurchased, 30000);
     
-    // ✅ EXPOSE the listing function to collection.js
     window.listPokemonOnChain = listPokemonOnChain;
     console.log('🌍 Exposed listPokemonOnChain globally');
     
-    // Confirm txHistory is exposed
     window.txHistory = window.txHistory;
     console.log('✅ TransactionHistory exposed globally');
 
