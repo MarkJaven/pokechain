@@ -21,7 +21,7 @@ window.CONTRACTS = {
 // CONTRACT ABIS - COMPLETE FOR ALL PAGES
 // =========================================
 window.ABIS = {
-  // PKCN ABI (full version for tournament.js)
+  // PKCN Token ABI (ERC20)
   PKCN: [
     "function balanceOf(address account) view returns (uint256)",
     "function decimals() view returns (uint8)",
@@ -39,7 +39,7 @@ window.ABIS = {
     "event MinterUpdated(address indexed newMinter)"
   ],
   
-  // MARKETPLACE ABI (unchanged)
+  // MARKETPLACE ABI
   MARKETPLACE: [
     "function buyPokemon(string memory name, string memory rarity, string memory imageURI, uint256 price) public returns (uint256)",
     "function listPokemon(uint256 tokenId, uint256 price) public returns (uint256)",
@@ -52,7 +52,7 @@ window.ABIS = {
     "event PokePurchased(address indexed buyer, uint256 indexed tokenId, uint256 price)"
   ],
   
-  // POKEMON_NFT ABI (unchanged)
+  // POKEMON_NFT ABI
   POKEMON_NFT: [
     "function mint(address to, string memory name, string memory rarity, string memory imageURI) public returns (uint256)",
     "function tokenURI(uint256 tokenId) public view returns (string memory)",
@@ -72,26 +72,20 @@ window.ABIS = {
     "event PokemonMinted(uint256 indexed tokenId, address indexed owner, string name, string rarity)"
   ],
   
-  // TOURNAMENT ABI (unchanged)
-   // TOURNAMENT ABI - COMPLETE VERSION
+  // TOURNAMENT ABI
   TOURNAMENT: [
-    // Core functions
     "function ENTRY_FEE() view returns (uint256)",
     "function startTournament(string tournamentId, uint256 tokenId, string difficulty, uint256 opponentCount) external",
     "function completeTournament(string tournamentId, uint256 wins, bool isPerfect) external",
     "function claimReward(string tournamentId) external",
     "function calculateReward(string difficulty, uint256 wins, bool isPerfect) view returns (uint256)",
     "function getEstimatedRewards(string difficulty, uint256 opponentCount) view returns (uint256 minReward, uint256 maxReward)",
-    
-    // Query functions - THESE WERE MISSING!
     "function getActiveTournament(address) external view returns (string, bool, bool)",
     "function getUnclaimedRewards(address) external view returns (string[], uint256[])",
     "function getTournamentData(string) external view returns (address, uint256, string, uint256, uint256, bool, bool, uint256, uint256, uint256)",
     "function getLockStatus(uint256) external view returns (bool, string)",
     "function canStartTournament(address, uint256) external view returns (bool, string)",
     "function expireTournament(string) external",
-    
-    // Events
     "event TournamentStarted(string indexed tournamentId, address indexed player, uint256 tokenId, string difficulty, uint256 opponentCount, uint256 entryFee)",
     "event TournamentCompleted(string indexed tournamentId, uint256 wins, uint256 totalReward)",
     "event RewardClaimed(string indexed tournamentId, address indexed player, uint256 reward)",
@@ -99,7 +93,9 @@ window.ABIS = {
     "event NFTUnlocked(uint256 indexed tokenId, address indexed player)",
     "event PlayerCleared(address indexed player)"
   ],
-   NFT_LOCK_GUARD: [
+  
+  // NFT_LOCK_GUARD ABI
+  NFT_LOCK_GUARD: [
     "function tournament() view returns (address)",
     "function pokeNFT() view returns (address)",
     "function transferFrom(address from, address to, uint256 tokenId) external",
@@ -110,47 +106,34 @@ window.ABIS = {
     "event GuardedSafeTransfer(address indexed from, address indexed to, uint256 indexed tokenId)",
     "error NFTLockedInTournament(uint256 tokenId)"
   ]
-
-
 };
-// Add to config.js (at the end):
+
+// =========================================
+// HELPER FUNCTIONS
+// =========================================
 window.checkMinter = async function() {
-    try {
-        if (!window.ethereum) {
-            alert("Please install MetaMask");
-            return;
-        }
-        
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const pkcnAddress = window.CONTRACTS.PKCN;
-        const tournamentAddress = window.CONTRACTS.TOURNAMENT;
-        
-        // Minimal ABI to check minter
-        const minterABI = [
-            "function minter() view returns (address)",
-            "function setMinter(address) external"
-        ];
-        
-        const pkcnContract = new ethers.Contract(pkcnAddress, minterABI, await provider.getSigner());
-        
-        const currentMinter = await pkcnContract.minter();
-        console.log("Current PKCN Minter:", currentMinter);
-        console.log("Tournament Address:", tournamentAddress);
-        
-        alert(`PKCN Minter Status:\n\nCurrent Minter: ${currentMinter}\nTournament: ${tournamentAddress}\n\nMatch? ${currentMinter.toLowerCase() === tournamentAddress.toLowerCase() ? '✅ YES' : '❌ NO'}`);
-        
-        if (currentMinter.toLowerCase() !== tournamentAddress.toLowerCase()) {
-            const confirmSet = confirm("Tournament contract is NOT set as PKCN minter! This is why rewards can't be claimed.\n\nDo you want to try setting it? (You need admin/owner access)");
-            if (confirmSet) {
-                const owner = prompt("Enter admin/owner wallet address:");
-                if (owner) {
-                    // You'll need owner's private key or wallet connection
-                    alert("Please connect as owner wallet and use tournament control panel to set minter.");
-                }
-            }
-        }
-    } catch (error) {
-        console.error("Minter check error:", error);
-        alert(`Error: ${error.message}`);
+  try {
+    if (!window.ethereum) {
+      alert("Please install MetaMask");
+      return;
     }
+    
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const pkcnAddress = window.CONTRACTS.PKCN;
+    const tournamentAddress = window.CONTRACTS.TOURNAMENT;
+    
+    const minterABI = [
+      "function minter() view returns (address)",
+      "function setMinter(address) external"
+    ];
+    
+    const pkcnContract = new ethers.Contract(pkcnAddress, minterABI, await provider.getSigner());
+    const currentMinter = await pkcnContract.minter();
+    
+    alert(`PKCN Minter Status:\n\nCurrent Minter: ${currentMinter}\nTournament: ${tournamentAddress}\n\nMatch? ${currentMinter.toLowerCase() === tournamentAddress.toLowerCase() ? '✅ YES' : '❌ NO'}`);
+    
+  } catch (error) {
+    console.error("Minter check error:", error);
+    alert(`Error: ${error.message}`);
+  }
 };
