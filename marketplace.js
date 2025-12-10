@@ -613,6 +613,7 @@ async function renderPlayerMarketplaceGrid() {
       const flavorText = speciesData.flavor_text_entries?.find(
         entry => entry.language.name === 'en'
       );
+      console.log(`Fetched description for ${pokemonName}:`, flavorText ? flavorText.flavor_text : 'No description found');
 
       const description = flavorText
         ? flavorText.flavor_text.replace(/\n|\f/g, ' ')

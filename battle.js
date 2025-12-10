@@ -1,5 +1,5 @@
 // ===================================================================
-// BATTLE ENGINE - Blockchain Enhanced (FIXED FOR YOUR CONFIG)
+// BATTLE ENGINE - Blockchain Enhanced (ULTRA-FAST MODE)
 // ===================================================================
 
 const gameState = {
@@ -44,7 +44,6 @@ const UI = {
   arena: document.getElementById('battleArena')
 };
 
-// Type effectiveness chart (unchanged)
 const TYPE_CHART = {
   fire: { grass: 2, ice: 2, bug: 2, steel: 2, fire: 0.5, water: 0.5, rock: 0.5, dragon: 0.5 },
   water: { fire: 2, ground: 2, rock: 2, water: 0.5, grass: 0.5, dragon: 0.5 },
@@ -87,20 +86,103 @@ const ABILITY_TYPE_MAP = {
   'tackle': 'normal', 'quick attack': 'normal', 'hyper beam': 'normal'
 };
 
+const RARITY_MULTIPLIERS = {
+  common: 1.00,
+  uncommon: 1.05,
+  rare: 1.10,
+  epic: 1.18,
+  legendary: 1.30
+};
+
+const ABILITY_OVERRIDES = {
+  'flamethrower': { power: 90, type: 'fire', damageClass: 'special' },
+  'ember': { power: 40, type: 'fire', damageClass: 'special' },
+  'fire blast': { power: 110, type: 'fire', damageClass: 'special' },
+  'fire punch': { power: 75, type: 'fire', damageClass: 'physical' },
+  'hydro pump': { power: 110, type: 'water', damageClass: 'special' },
+  'surf': { power: 90, type: 'water', damageClass: 'special' },
+  'water gun': { power: 40, type: 'water', damageClass: 'special' },
+  'waterfall': { power: 80, type: 'water', damageClass: 'physical' },
+  'thunderbolt': { power: 90, type: 'electric', damageClass: 'special' },
+  'thunder': { power: 110, type: 'electric', damageClass: 'special' },
+  'thunder punch': { power: 75, type: 'electric', damageClass: 'physical' },
+  'ice beam': { power: 90, type: 'ice', damageClass: 'special' },
+  'blizzard': { power: 110, type: 'ice', damageClass: 'special' },
+  'ice punch': { power: 75, type: 'ice', damageClass: 'physical' },
+  'solar beam': { power: 120, type: 'grass', damageClass: 'special' },
+  'razor leaf': { power: 55, type: 'grass', damageClass: 'physical' },
+  'vine whip': { power: 45, type: 'grass', damageClass: 'physical' },
+  'psychic': { power: 90, type: 'psychic', damageClass: 'special' },
+  'psybeam': { power: 65, type: 'psychic', damageClass: 'special' },
+  'shadow ball': { power: 80, type: 'ghost', damageClass: 'special' },
+  'lick': { power: 30, type: 'ghost', damageClass: 'physical' },
+  'dragon claw': { power: 80, type: 'dragon', damageClass: 'physical' },
+  'dragon breath': { power: 60, type: 'dragon', damageClass: 'special' },
+  'dark pulse': { power: 80, type: 'dark', damageClass: 'special' },
+  'bite': { power: 60, type: 'dark', damageClass: 'physical' },
+  'crunch': { power: 80, type: 'dark', damageClass: 'physical' },
+  'flash cannon': { power: 80, type: 'steel', damageClass: 'special' },
+  'iron head': { power: 80, type: 'steel', damageClass: 'physical' },
+  'moonblast': { power: 95, type: 'fairy', damageClass: 'special' },
+  'play rough': { power: 90, type: 'fairy', damageClass: 'physical' },
+  'earthquake': { power: 100, type: 'ground', damageClass: 'physical' },
+  'dig': { power: 80, type: 'ground', damageClass: 'physical' },
+  'brave bird': { power: 120, type: 'flying', damageClass: 'physical' },
+  'aerial ace': { power: 60, type: 'flying', damageClass: 'physical' },
+  'close combat': { power: 120, type: 'fighting', damageClass: 'physical' },
+  'karate chop': { power: 50, type: 'fighting', damageClass: 'physical' },
+  'sludge bomb': { power: 90, type: 'poison', damageClass: 'special' },
+  'poison jab': { power: 80, type: 'poison', damageClass: 'physical' },
+  'rock slide': { power: 75, type: 'rock', damageClass: 'physical' },
+  'stone edge': { power: 100, type: 'rock', damageClass: 'physical' },
+  'zen headbutt': { power: 80, type: 'psychic', damageClass: 'physical' },
+  'confusion': { power: 50, type: 'psychic', damageClass: 'special' },
+  'tackle': { power: 40, type: 'normal', damageClass: 'physical' },
+  'quick attack': { power: 40, type: 'normal', damageClass: 'physical' },
+  'hyper beam': { power: 150, type: 'normal', damageClass: 'special' }
+};
+
+function deepClone(obj) {
+  if (typeof structuredClone !== 'undefined') {
+    return structuredClone(obj);
+  }
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function getAbilityProperties(abilityName, pokemonTypes) {
+  const name = abilityName.toLowerCase();
+  
+  if (ABILITY_OVERRIDES[name]) {
+    return ABILITY_OVERRIDES[name];
+  }
+  
+  const moveType = getAbilityType(abilityName, pokemonTypes);
+  const power = name.includes('hyper beam') ? 150 :
+                name.includes('blast') || name.includes('pump') || name.includes('beam') ? 110 :
+                name.includes('thrower') || name.includes('wave') ? 90 :
+                name.includes('punch') || name.includes('kick') || name.includes('claw') ? 75 :
+                name.includes('attack') || name.includes('slash') ? 70 :
+                name.includes('tackle') || name.includes('quick attack') ? 40 :
+                60;
+                
+  const specialTypes = ['fire', 'water', 'electric', 'ice', 'grass', 'psychic', 'dragon', 'dark', 'fairy', 'ghost'];
+  const damageClass = specialTypes.includes(moveType) ? 'special' : 'physical';
+  
+  return { power, type: moveType, damageClass };
+}
+
 // ===================================================================
-// INITIALIZATION (FIXED)
+// INITIALIZATION
 // ===================================================================
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     UI.loading.classList.remove('hidden');
     
-    // Get tournament ID from URL params
     const urlParams = new URLSearchParams(window.location.search);
     gameState.tournamentId = urlParams.get('tournamentId');
     
     if (!gameState.tournamentId) {
-      // Try to get from localStorage (backward compatibility)
       gameState.tournamentId = localStorage.getItem('currentTournamentId');
     }
     
@@ -156,7 +238,7 @@ async function initializeTournament() {
 }
 
 // ===================================================================
-// CRITICAL FIX: TOURNAMENT COMPLETION WITH BLOCKCHAIN
+// TOURNAMENT COMPLETION
 // ===================================================================
 
 async function endTournament() {
@@ -167,53 +249,36 @@ async function endTournament() {
   const player = sorted.find(p => p.isPlayer);
   const rank = sorted.indexOf(player) + 1;
 
-  const isVictory = rank === 1;
-  const rewards = calculateRewards();
-
-  // Show processing screen
-  UI.resultTitle.textContent = '💎 Processing Tournament...';
+  UI.resultTitle.textContent = 'Processing Tournament...';
   UI.resultMessage.textContent = 'Submitting results to blockchain...';
   UI.resultScreen.classList.remove('hidden');
 
   try {
-    // Check if we have a tournament ID
     if (!gameState.tournamentId) {
       throw new Error('No tournament ID found. Cannot save results to blockchain.');
     }
 
-    // Check if wallet is connected
+    const contractReward = await getContractRewardCalculation(gameState.tournamentId, player.wins);
+    
     if (!window.wallet || !window.wallet.getAccount || !window.wallet.getAccount()) {
       throw new Error('Wallet not connected. Please connect your wallet to claim rewards.');
     }
 
-    // Get provider and signer using your wallet.js
     const provider = await window.wallet.getProvider();
     const signer = await window.wallet.getSigner();
-    const account = window.wallet.getAccount();
 
-    console.log('🎯 Submitting tournament results for:', account);
-    console.log('📊 Tournament ID:', gameState.tournamentId);
-    console.log('🏆 Wins:', player.wins);
-
-    // Check if tournament contract is configured
-    if (!window.CONTRACTS?.TOURNAMENT || !window.ABIS?.TOURNAMENT) {
-      throw new Error('Tournament contract not configured in config.js');
-    }
-
-    // Initialize tournament contract (using your config format)
     const tournamentContract = new ethers.Contract(
-      window.CONTRACTS.TOURNAMENT, // Uses "TOURNAMENT" not "TOURNAMENT_ADDRESS"
-      window.ABIS.TOURNAMENT,      // Uses "TOURNAMENT" not "TOURNAMENT_ABI"
+      window.CONTRACTS.TOURNAMENT,
+      window.ABIS.TOURNAMENT,
       signer
     );
 
-    // Calculate perfect bonus
     const totalPlayerMatches = gameState.participants.length - 1;
     const isPerfect = player.wins === totalPlayerMatches;
 
     console.log(`✅ Completing tournament with ${player.wins} wins (Perfect: ${isPerfect})`);
+    console.log(`💰 Contract-calculated reward: ${contractReward} PKCN`);
 
-    // Complete tournament on-chain
     UI.resultMessage.textContent = 'Submitting tournament results...';
     const completeTx = await tournamentContract.completeTournament(
       gameState.tournamentId,
@@ -224,29 +289,24 @@ async function endTournament() {
     await completeTx.wait();
     console.log('✅ Tournament completed on-chain');
 
-    // Claim reward
     UI.resultMessage.textContent = 'Claiming your PKCN reward...';
     const claimTx = await tournamentContract.claimReward(gameState.tournamentId);
     await claimTx.wait();
 
     console.log('✅ Reward claimed successfully');
 
-    // Update local storage with tournament history
     const history = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
     if (!history.includes(gameState.tournamentId)) {
       history.push(gameState.tournamentId);
       localStorage.setItem('tournamentHistory', JSON.stringify(history));
     }
 
-    // Clear current tournament from storage
     localStorage.removeItem('currentTournamentId');
     localStorage.removeItem('currentTournament');
 
-    // Update balance display
     await updateBalanceDisplay();
 
-    // Show success results
-    showTournamentResult(isVictory, rank, rewards.total, true, gameState.tournamentId);
+    showTournamentResult(rank === 1, rank, contractReward, true, gameState.tournamentId);
 
   } catch (error) {
     console.error('❌ Failed to claim rewards:', error);
@@ -268,17 +328,42 @@ async function endTournament() {
       errorMessage += error.message.substring(0, 100);
     }
     
-    // Still show results but indicate manual claiming needed
-    showTournamentResult(isVictory, rank, rewards.total, false, gameState.tournamentId, errorMessage);
+    const localRewards = calculateRewards();
+    showTournamentResult(rank === 1, rank, localRewards.total, false, gameState.tournamentId, errorMessage);
   }
 }
 
-// ===================================================================
-// UPDATED RESULT DISPLAY FUNCTION
-// ===================================================================
+async function getContractRewardCalculation(tournamentId, wins) {
+  try {
+    if (!window.CONTRACTS?.TOURNAMENT || !window.ABIS?.TOURNAMENT) {
+      throw new Error('Tournament contract not configured');
+    }
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const tournamentContract = new ethers.Contract(
+      window.CONTRACTS.TOURNAMENT,
+      window.ABIS.TOURNAMENT,
+      provider
+    );
+
+    const totalPlayerMatches = gameState.participants.length - 1;
+    const isPerfect = wins === totalPlayerMatches;
+    
+    const tournamentData = await tournamentContract.getTournamentData(tournamentId);
+    const difficulty = tournamentData[2];
+    
+    const reward = await tournamentContract.calculateReward(difficulty, wins, isPerfect);
+    
+    return reward.toString();
+  } catch (error) {
+    console.warn('⚠️ Could not read reward from contract, using local calculation:', error);
+    const localRewards = calculateRewards();
+    return localRewards.total;
+  }
+}
 
 function showTournamentResult(isVictory, rank, totalReward, success = true, tournamentId = null, errorMessage = null) {
-  UI.resultTitle.textContent = isVictory ? '🏆 TOURNAMENT CHAMPION!' : 'TOURNAMENT COMPLETE';
+  UI.resultTitle.textContent = isVictory ? 'TOURNAMENT CHAMPION!' : 'TOURNAMENT COMPLETE';
   
   const player = gameState.participants.find(p => p.isPlayer);
   let message = '';
@@ -286,10 +371,10 @@ function showTournamentResult(isVictory, rank, totalReward, success = true, tour
   if (success) {
     message = `${isVictory ? 'Perfect performance!' : 'Good effort!'}<br><br>
               Final Rank: #${rank} with ${player.wins} wins<br>
-              💰 Earned ${totalReward} PKCN Tokens!`;
+              Earned ${totalReward} PKCN Tokens!`;
     
     if (tournamentId) {
-      message += `<br>🏷️ Tournament ID: ${tournamentId.substring(0, 20)}...`;
+      message += `<br>Tournament ID: ${tournamentId.substring(0, 20)}...`;
     }
   } else {
     message = `Final Rank: #${rank} with ${player.wins} wins<br><br>
@@ -305,7 +390,6 @@ function showTournamentResult(isVictory, rank, totalReward, success = true, tour
   UI.resultScreen.querySelector('.result-content').className = `result-content ${isVictory ? 'victory' : 'defeat'}`;
   UI.resultScreen.classList.remove('hidden');
   
-  // Set up return button
   const returnBtn = document.getElementById('returnBtn');
   if (returnBtn) {
     returnBtn.onclick = () => {
@@ -315,10 +399,6 @@ function showTournamentResult(isVictory, rank, totalReward, success = true, tour
   
   log('battle', `🎉 Tournament ended! Rank: #${rank}, Wins: ${player.wins}/${gameState.participants.length - 1}, Rewards: ${totalReward} PKCN`);
 }
-
-// ===================================================================
-// BALANCE UPDATE FUNCTION (USES YOUR WALLET.JS)
-// ===================================================================
 
 async function updateBalanceDisplay() {
   try {
@@ -330,10 +410,6 @@ async function updateBalanceDisplay() {
     console.warn('Failed to update balance display:', error);
   }
 }
-
-// ===================================================================
-// REWARD CALCULATION (UNCHANGED)
-// ===================================================================
 
 function calculateRewards() {
   const player = gameState.participants.find(p => p.isPlayer);
@@ -354,11 +430,6 @@ function calculateRewards() {
   };
 }
 
-// ===================================================================
-// REST OF THE BATTLE FUNCTIONS (UNCHANGED - KEEP ALL EXISTING CODE BELOW)
-// ===================================================================
-
-// HP VALIDATION UTILITY
 function ensureNumber(value, defaultValue = 100) {
   const num = Number(value);
   return (isNaN(num) || num < 0) ? defaultValue : Math.floor(num);
@@ -601,27 +672,61 @@ function generateMatchups() {
 
 function createBattlePokemon(metadata) {
   const battleMon = {
-    ...metadata,
+    id: metadata.id,
+    name: metadata.name,
+    types: [...metadata.types],
+    abilities: [...metadata.abilities],
+    ivs: { ...metadata.ivs },
+    isPlayer: metadata.isPlayer,
+    wins: metadata.wins,
+    losses: metadata.losses,
+    rarity: metadata.rarity,
     battleId: `${metadata.id}_${Date.now()}_${Math.random()}`
   };
   
-  if (battleMon.maxHp === undefined || battleMon.maxHp === null || isNaN(battleMon.maxHp)) {
-    console.error(`[HP BUG] Invalid maxHp for ${battleMon.name}, reconstructing from stats`);
-    battleMon.maxHp = ensureNumber(battleMon.stats?.hp, 100);
-  }
+  battleMon.stats = {
+    hp: metadata.stats.hp,
+    attack: metadata.stats.attack,
+    defense: metadata.stats.defense,
+    specialAttack: metadata.stats.specialAttack,
+    specialDefense: metadata.stats.specialDefense,
+    speed: metadata.stats.speed
+  };
   
-  battleMon.currentHp = ensureNumber(battleMon.maxHp);
+  const multiplier = RARITY_MULTIPLIERS[battleMon.rarity] || 1.0;
   
-  console.log(`[BattleState] ${battleMon.name} - HP: ${battleMon.currentHp}/${battleMon.maxHp}`);
+  battleMon.stats.attack = Math.floor(battleMon.stats.attack * multiplier);
+  battleMon.stats.defense = Math.floor(battleMon.stats.defense * multiplier);
+  battleMon.stats.specialAttack = Math.floor(battleMon.stats.specialAttack * multiplier);
+  battleMon.stats.specialDefense = Math.floor(battleMon.stats.specialDefense * multiplier);
+  battleMon.stats.speed = Math.floor(battleMon.stats.speed * multiplier);
+  
+  const originalHp = battleMon.stats.hp;
+  battleMon.maxHp = Math.floor(originalHp * multiplier);
+  battleMon.currentHp = battleMon.maxHp;
+  
+  console.log(`[BattleState] ${battleMon.name} - HP: ${battleMon.currentHp}/${battleMon.maxHp}, Multiplier: ${multiplier}`);
   
   return battleMon;
 }
 
-function startNextMatch() {
+function resetBattlePokemonHp(battleMon) {
+  const oldHp = battleMon.currentHp;
+  battleMon.currentHp = battleMon.maxHp;
+  console.log(`[HP RESET] ${battleMon.name}: ${oldHp} → ${battleMon.currentHp}/${battleMon.maxHp}`);
+}
+
+async function startNextMatch() {
   if (gameState.matchIndex >= gameState.matchups.length) {
     endTournament();
     return;
   }
+  
+  UI.loading.classList.remove('hidden');
+  UI.actionSelection.classList.add('hidden');
+  
+  // HIDE HP BARS AT MATCH START (AI turns)
+  hideHpBars();
   
   const matchup = gameState.matchups[gameState.matchIndex];
   const p1Meta = gameState.participants[matchup.p1Index];
@@ -636,10 +741,8 @@ function startNextMatch() {
     actionsThisRound: 0
   };
   
-  if (gameState.currentBattle.p1.currentHp !== gameState.currentBattle.p1.maxHp ||
-      gameState.currentBattle.p2.currentHp !== gameState.currentBattle.p2.maxHp) {
-    console.error('[CRITICAL HP BUG] HP not reset to max!', gameState.currentBattle);
-  }
+  resetBattlePokemonHp(gameState.currentBattle.p1);
+  resetBattlePokemonHp(gameState.currentBattle.p2);
   
   gameState.battleActive = true;
   gameState.matchIndex++;
@@ -648,15 +751,16 @@ function startNextMatch() {
   
   log('battle', `⚔️ Match ${gameState.matchIndex}: ${p1Meta.name} vs ${p2Meta.name}`);
   log('battle', `📊 Round ${gameState.currentBattle.round} begins!`);
-  log('battle', `❤️ HP Reset: ${gameState.currentBattle.p1.name} → ${gameState.currentBattle.p1.currentHp}/${gameState.currentBattle.p1.maxHp}`);
-  log('battle', `❤️ HP Reset: ${gameState.currentBattle.p2.name} → ${gameState.currentBattle.p2.currentHp}/${gameState.currentBattle.p2.maxHp}`);
   
   UI.arena.setAttribute('data-round', gameState.currentBattle.round);
   
+  await new Promise(resolve => setTimeout(resolve, 200));
+  
+  UI.loading.classList.add('hidden');
   renderBattle();
   updateStandings();
   
-  setTimeout(() => executeTurn(), 800);
+  setTimeout(() => executeTurn(), 100);
 }
 
 function executeTurn() {
@@ -672,10 +776,36 @@ function executeTurn() {
   const currentBattler = gameState.currentBattle.turn === 0 ? p1 : p2;
   
   if (currentBattler.isPlayer) {
+    // SHOW HP BARS ON PLAYER TURN (NO HIDE)
+    showHpBars();
     enablePlayerActions(currentBattler);
   } else {
-    setTimeout(() => executeAIActions(currentBattler), 1200);
+    // HIDE HP BARS ON AI TURN + 20X FASTER
+    hideHpBars();
+    setTimeout(() => executeAIActions(currentBattler), 50); // 50ms delay for AI
   }
+}
+
+function showHpBars() {
+  // Remove hidden class ONLY - keep normal speed
+  document.getElementById('enemyHpContainer').classList.remove('hidden');
+  document.getElementById('playerHpContainer').classList.remove('hidden');
+  
+  // Force HP sync when shown
+  if (gameState.currentBattle) {
+    const { p1, p2 } = gameState.currentBattle;
+    const player = p1.isPlayer ? p1 : p2;
+    const enemy = p1.isPlayer ? p2 : p1;
+    updateHpBar(player, true);
+    updateHpBar(enemy, true);
+  }
+}
+
+function hideHpBars() {
+  // Add super-fast mode AND hide HP
+  UI.arena.classList.add('super-fast-mode');
+  document.getElementById('enemyHpContainer').classList.add('hidden');
+  document.getElementById('playerHpContainer').classList.add('hidden');
 }
 
 function enablePlayerActions(pokemon) {
@@ -723,6 +853,8 @@ function completeAction() {
   gameState.currentBattle.actionsThisRound++;
   
   if (gameState.currentBattle.actionsThisRound >= 2) {
+    const { p1, p2 } = gameState.currentBattle;
+    
     gameState.currentBattle.actionsThisRound = 0;
     gameState.currentBattle.round++;
     UI.arena.setAttribute('data-round', gameState.currentBattle.round);
@@ -732,9 +864,9 @@ function completeAction() {
         log('battle', `📊 Round ${gameState.currentBattle.round} begins!`);
         executeTurn();
       }
-    }, 1000);
+    }, 200); // Brief pause between rounds
   } else {
-    setTimeout(() => executeTurn(), 600);
+    setTimeout(() => executeTurn(), 50); // 50ms between actions
   }
 }
 
@@ -764,7 +896,7 @@ async function executeAIActions(attacker) {
 async function executeAbility(user, ability) {
   log('ability', `💥 ${user.name} used ${ability.name}!`);
   
-  const moveType = getAbilityType(ability.name, user.types);
+  const { power, type: moveType, damageClass } = getAbilityProperties(ability.name, user.types);
   applyAttackAnimation(user, moveType);
   
   const { p1, p2 } = gameState.currentBattle;
@@ -782,38 +914,32 @@ async function executeAbility(user, ability) {
     const healAmount = Math.floor(user.maxHp * 0.15 + user.stats.specialAttack * 0.05);
     const actualHeal = Math.min(healAmount, Math.floor(user.maxHp * 0.5));
     
-    const currentHp = ensureNumber(user.currentHp);
-    const maxHp = ensureNumber(user.maxHp);
+    user.currentHp = Math.min(user.maxHp, ensureNumber(user.currentHp) + actualHeal);
     
-    user.currentHp = Math.min(maxHp, currentHp + actualHeal);
     log('heal', `💚 ${user.name} restored ${actualHeal} HP!`);
     updateHpBar(user);
     return;
   }
   
-  let power = 60;
-  if (effect.includes('heavy') || effect.includes('powerful')) power = 90;
-  else if (effect.includes('strong')) power = 75;
-  else if (effect.includes('light') || effect.includes('weak')) power = 40;
-  
-  let damage = calculateDamage(power, moveType, user, opponent);
-  
+  const damage = calculateDamage(power, moveType, user, opponent, damageClass);
+
   if (gameState.currentBattle.defending === opponent) {
     const outcome = calculateDefenseOutcome(opponent);
-    damage = applyDefenseReduction(damage, outcome);
+    const reducedDamage = applyDefenseReduction(damage, outcome);
+    
+    opponent.currentHp = Math.max(0, ensureNumber(opponent.currentHp) - reducedDamage);
+    
+    log('damage', `💢 Dealt ${reducedDamage} damage!`);
+    showDamageNumber(opponent, reducedDamage);
+  } else {
+    opponent.currentHp = Math.max(0, ensureNumber(opponent.currentHp) - damage);
+    
+    log('damage', `💢 Dealt ${damage} damage!`);
+    showDamageNumber(opponent, damage);
   }
   
-  if (isCriticalHit()) {
-    damage = Math.floor(damage * 1.5);
-    log('effectiveness', '❗ CRITICAL HIT!');
-  }
-  
-  opponent.currentHp = Math.max(0, ensureNumber(opponent.currentHp) - damage);
-  log('damage', `💢 Dealt ${damage} damage!`);
-  showDamageNumber(opponent, damage);
   updateHpBar(opponent);
-  
-  playHitAnimation(opponent);
+  playHitAnimation(opponent, damage);
   
   if (opponent.currentHp === 0) await handleFaint(opponent);
 }
@@ -826,15 +952,23 @@ function getAbilityType(abilityName, pokemonTypes) {
   return pokemonTypes[0];
 }
 
-function calculateDamage(power, moveType, attacker, defender) {
+function calculateDamage(movePower, moveType, attacker, defender, damageClass) {
   const level = 50;
-  const attackStat = attacker.stats.attack;
-  const defenseStat = defender.stats.defense;
+  const attackStat = damageClass === 'special' ? attacker.stats.specialAttack : attacker.stats.attack;
+  const defenseStat = damageClass === 'special' ? defender.stats.specialDefense : defender.stats.defense;
   
-  let damage = Math.floor((((2 * level / 5 + 2) * power * attackStat / defenseStat) / 50) + 2);
+  let damage = Math.floor((((2 * level / 5 + 2) * movePower * attackStat / defenseStat) / 50) + 2);
+  
+  const hasStab = attacker.types.some(type => type === moveType);
+  if (hasStab) {
+    damage = Math.floor(damage * 1.5);
+  }
+  
   const effectiveness = calculateTypeEffectiveness(moveType, defender.types);
   damage = Math.floor(damage * effectiveness);
-  damage = Math.floor(damage * (0.85 + Math.random() * 0.15));
+  
+  damage = Math.floor(damage * (0.80 + Math.random() * 0.25));
+  
   return Math.max(1, damage);
 }
 
@@ -917,13 +1051,103 @@ async function handleFaint(faintedPokemon) {
     } else {
       endTournament();
     }
-  }, 2500);
+  }, 800); // Shortened victory screen
+}
+
+// ===================================================================
+// HP BAR UPDATE SYSTEM
+// ===================================================================
+
+function validateHpValues(pokemon) {
+  try {
+    pokemon.maxHp = ensureNumber(pokemon.maxHp, 100);
+    pokemon.currentHp = ensureNumber(pokemon.currentHp, pokemon.maxHp);
+    pokemon.currentHp = Math.max(0, Math.min(pokemon.currentHp, pokemon.maxHp));
+    return true;
+  } catch (error) {
+    console.error('❌ HP Validation failed:', error, pokemon);
+    return false;
+  }
+}
+
+function forceHpBarUpdate(pokemon) {
+  const target = pokemon.isPlayer ? UI.player : UI.enemy;
+  const maxHp = pokemon.maxHp;
+  const currentHp = pokemon.currentHp;
+  const percentage = (currentHp / maxHp) * 100;
+  
+  target.hpBar.style.transition = 'none';
+  target.hpBar.style.width = '0%';
+  target.hpBar.offsetHeight;
+  target.hpBar.style.width = `${percentage}%`;
+  
+  setTimeout(() => {
+    target.hpBar.style.transition = 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+  }, 50);
+}
+
+function flashHpBar(pokemon) {
+  const target = pokemon.isPlayer ? UI.player : UI.enemy;
+  target.hpBar.classList.add('updating');
+  setTimeout(() => target.hpBar.classList.remove('updating'), 300);
+}
+
+function updateHpBar(pokemon, isReset = false) {
+  try {
+    if (!validateHpValues(pokemon)) {
+      throw new Error('Invalid HP values');
+    }
+    
+    const target = pokemon.isPlayer ? UI.player : UI.enemy;
+    const maxHp = pokemon.maxHp;
+    const currentHp = pokemon.currentHp;
+    const percentage = Math.max(0, Math.min(100, (currentHp / maxHp) * 100));
+    
+    target.hpBar.parentElement.setAttribute('data-current-hp', currentHp);
+    target.hpBar.parentElement.setAttribute('data-max-hp', maxHp);
+    
+    target.hpText.textContent = `HP: ${currentHp}/${maxHp}`;
+    
+    if (isReset) {
+      forceHpBarUpdate(pokemon);
+      target.hpBar.parentElement.classList.add('hp-reset-pulse');
+      setTimeout(() => target.hpBar.parentElement.classList.remove('hp-reset-pulse'), 600);
+    } else {
+      const oldWidth = parseFloat(target.hpBar.style.width) || 0;
+      target.hpBar.style.width = `${percentage}%`;
+      
+      if (Math.abs(oldWidth - percentage) > 20) {
+        flashHpBar(pokemon);
+      }
+    }
+    
+    if (percentage > 50) {
+      target.hpBar.style.background = 'var(--hp-green)';
+    } else if (percentage > 25) {
+      target.hpBar.style.background = 'var(--hp-yellow)';
+    } else {
+      target.hpBar.style.background = 'var(--hp-red)';
+    }
+    
+    target.hpBar.offsetHeight;
+    
+  } catch (error) {
+    console.error('❌ updateHpBar error:', error, pokemon);
+    const target = pokemon.isPlayer ? UI.player : UI.enemy;
+    target.hpText.textContent = 'HP: ERROR';
+    target.hpBar.style.width = '0%';
+  }
 }
 
 function renderBattle() {
   const { p1, p2 } = gameState.currentBattle;
   const player = p1.isPlayer ? p1 : p2;
   const enemy = p1.isPlayer ? p2 : p1;
+  
+  removeDefendVisuals();
+  UI.player.wrapper.classList.remove('hit-flinch');
+  UI.enemy.wrapper.classList.remove('hit-flinch');
+  UI.arena.classList.remove('taking-damage');
   
   UI.player.sprite.src = `https://play.pokemonshowdown.com/sprites/xyani-back/${player.name.toLowerCase()}.gif`;
   UI.enemy.sprite.src = `https://play.pokemonshowdown.com/sprites/xyani/${enemy.name.toLowerCase()}.gif`;
@@ -939,37 +1163,10 @@ function renderBattle() {
   UI.player.name.textContent = `#${player.id} ${player.name}`;
   UI.enemy.name.textContent = `#${enemy.id} ${enemy.name}`;
   
-  updateHpBar(player);
-  updateHpBar(enemy);
-}
-
-function updateHpBar(pokemon) {
-  try {
-    const maxHp = ensureNumber(pokemon.maxHp, 100);
-    const currentHp = ensureNumber(pokemon.currentHp, maxHp);
-    const target = pokemon.isPlayer ? UI.player : UI.enemy;
-    
-    const percentage = Math.max(0, Math.min(100, (currentHp / maxHp) * 100));
-    
-    target.hpBar.style.width = `${percentage}%`;
-    target.hpText.textContent = `HP: ${currentHp}/${maxHp}`;
-    
-    // Force DOM reflow
-    target.hpBar.offsetHeight;
-    
-    // Color based on health
-    if (percentage > 50) {
-      target.hpBar.style.background = 'linear-gradient(90deg, #00ff9d, #00c474)';
-    } else if (percentage > 25) {
-      target.hpBar.style.background = 'linear-gradient(90deg, #ffd93d, #ffb800)';
-    } else {
-      target.hpBar.style.background = 'linear-gradient(90deg, #ff6b6b, #ff3b3b)';
-    }
-  } catch (error) {
-    console.error('updateHpBar error (emergency fallback):', error, pokemon);
-    const target = pokemon.isPlayer ? UI.player : UI.enemy;
-    target.hpText.textContent = 'HP: ERROR/100';
-  }
+  requestAnimationFrame(() => {
+    updateHpBar(player, true);
+    updateHpBar(enemy, true);
+  });
 }
 
 function updateStandings() {
@@ -1028,27 +1225,39 @@ function showDamageNumber(pokemon, damage) {
 }
 
 function applyAttackAnimation(attacker, moveType) {
-  const wrapper = attacker.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
+  const isPlayer = attacker.isPlayer;
+  const wrapper = isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
   const sprite = wrapper.querySelector('.sprite-container');
   
   sprite.className = 'sprite-container';
   
+  const projX = isPlayer ? 120 : -120;
+  const projY = isPlayer ? -60 : 60;
+  
   setTimeout(() => {
-    sprite.classList.add(`attack-${moveType || 'normal'}`);
-    sprite.classList.add('attacking');
+    sprite.style.setProperty('--proj-x', `${projX}px`);
+    sprite.style.setProperty('--proj-y', `${projY}px`);
+    sprite.classList.add(`attack-${moveType || 'normal'}`, 'attacking');
   }, 100);
   
   setTimeout(() => {
-    sprite.classList.remove(`attack-${moveType || 'normal'}`);
-    sprite.classList.remove('attacking');
+    sprite.classList.remove(`attack-${moveType || 'normal'}`, 'attacking');
+    sprite.style.removeProperty('--proj-x');
+    sprite.style.removeProperty('--proj-y');
   }, 600);
 }
 
-function playHitAnimation(defender) {
+function playHitAnimation(defender, damage) {
   const wrapper = defender.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
   const sprite = wrapper.querySelector('.pokemon-sprite');
   
   sprite.classList.add('hit-flinch');
+  
+  if (damage > 50) {
+    UI.arena.classList.add('taking-damage');
+    setTimeout(() => UI.arena.classList.remove('taking-damage'), 300);
+  }
+  
   setTimeout(() => sprite.classList.remove('hit-flinch'), 300);
 }
 
@@ -1074,3 +1283,33 @@ function removeDefendVisuals() {
     el.classList.remove('defending');
   });
 }
+
+// Add missing CSS
+const style = document.createElement('style');
+style.textContent = `
+  .taking-damage {
+    animation: arenaShake 0.3s ease-out;
+  }
+  
+  @keyframes arenaShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+  
+  .hp-reset-pulse {
+    animation: hpPulse 0.6s ease-out;
+  }
+  
+  @keyframes hpPulse {
+    0% { box-shadow: 0 0 0 rgba(0, 255, 157, 0.8); }
+    50% { box-shadow: 0 0 30px rgba(0, 255, 157, 0.4); }
+    100% { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); }
+  }
+`;
+document.head.appendChild(style);
+
+// Ensure HP bars are hidden on initial load
+window.addEventListener('DOMContentLoaded', () => {
+  hideHpBars();
+});
