@@ -944,52 +944,56 @@
       }
     }
 
-    /* ===== PROJECTILE SYSTEM ===== */
+  /* ===== DYNAMIC PROJECTILE SYSTEM ===== */
 .projectile {
   position: absolute;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   pointer-events: none;
   z-index: 15;
-  animation: projectileTravel 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-  box-shadow: 0 0 20px currentColor;
+  opacity: 0;
+  transform: scale(0.5);
 }
 
 @keyframes projectileTravel {
   0% {
     transform: scale(0.5) translate(0, 0);
-    opacity: 0.8;
+    opacity: 0.9;
   }
   20% {
-    transform: scale(1.2) translate(calc(var(--dx, 100px) * 0.2), calc(var(--dy, -50px) * 0.2));
+    transform: scale(1.3) translate(0, 0);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(1) translate(var(--dx), var(--dy));
     opacity: 1;
   }
   100% {
-    transform: scale(0.8) translate(var(--dx, 100px), var(--dy, -50px));
+    transform: scale(0.8) translate(var(--dx), var(--dy));
     opacity: 0;
   }
 }
 
-.projectile-fire { background: radial-gradient(circle, #ff6b00, #ff0000); --dx: 150px; --dy: -50px; }
-.projectile-water { background: radial-gradient(circle, #00c4ff, #0066ff); --dx: 140px; --dy: -40px; }
-.projectile-grass { background: radial-gradient(circle, #6bcf7f, #2d8a3d); --dx: 145px; --dy: -45px; }
-.projectile-electric { background: radial-gradient(circle, #ffeb3b, #ffc107); --dx: 160px; --dy: -55px; }
-.projectile-ice { background: radial-gradient(circle, #b3e5fc, #81d4fa); --dx: 135px; --dy: -42px; }
-.projectile-fighting { background: radial-gradient(circle, #ff5722, #d84315); --dx: 155px; --dy: -48px; }
-.projectile-poison { background: radial-gradient(circle, #9c27b0, #6a1b9a); --dx: 130px; --dy: -38px; }
-.projectile-ground { background: radial-gradient(circle, #8d6e63, #5d4037); --dx: 150px; --dy: -30px; }
-.projectile-flying { background: radial-gradient(circle, #b2ebf2, #80deea); --dx: 165px; --dy: -60px; }
-.projectile-psychic { background: radial-gradient(circle, #e91e63, #ad1457); --dx: 145px; --dy: -42px; }
-.projectile-bug { background: radial-gradient(circle, #cddc39, #9e9d24); --dx: 132px; --dy: -35px; }
-.projectile-rock { background: radial-gradient(circle, #bdbdbd, #757575); --dx: 125px; --dy: -32px; }
-.projectile-ghost { background: radial-gradient(circle, #7e57c2, #5e35b1); --dx: 142px; --dy: -40px; }
-.projectile-dragon { background: radial-gradient(circle, #673ab7, #4527a0); --dx: 170px; --dy: -50px; }
-.projectile-dark { background: radial-gradient(circle, #424242, #212121); --dx: 148px; --dy: -45px; }
-.projectile-steel { background: radial-gradient(circle, #c0c0c0, #90a4ae); --dx: 128px; --dy: -33px; }
-.projectile-fairy { background: radial-gradient(circle, #fce4ec, #f8bbd0); --dx: 140px; --dy: -37px; }
-.projectile-normal { background: radial-gradient(circle, #fff, #ccc); --dx: 130px; --dy: -35px; }
-
+/* Projectile Type Styles - only define colors */
+.projectile-fire { background: radial-gradient(circle, #ff6b00, #ff0000); box-shadow: 0 0 25px #ff6b00; }
+.projectile-water { background: radial-gradient(circle, #00c4ff, #0066ff); box-shadow: 0 0 25px #00c4ff; }
+.projectile-grass { background: radial-gradient(circle, #6bcf7f, #2d8a3d); box-shadow: 0 0 25px #6bcf7f; }
+.projectile-electric { background: radial-gradient(circle, #ffeb3b, #ffc107); box-shadow: 0 0 30px #ffeb3b; }
+.projectile-ice { background: radial-gradient(circle, #b3e5fc, #81d4fa); box-shadow: 0 0 25px #b3e5fc; }
+.projectile-fighting { background: radial-gradient(circle, #ff5722, #d84315); box-shadow: 0 0 25px #ff5722; }
+.projectile-poison { background: radial-gradient(circle, #9c27b0, #6a1b9a); box-shadow: 0 0 25px #9c27b0; }
+.projectile-ground { background: radial-gradient(circle, #8d6e63, #5d4037); box-shadow: 0 0 25px #8d6e63; }
+.projectile-flying { background: radial-gradient(circle, #b2ebf2, #80deea); box-shadow: 0 0 25px #b2ebf2; }
+.projectile-psychic { background: radial-gradient(circle, #e91e63, #ad1457); box-shadow: 0 0 25px #e91e63; }
+.projectile-bug { background: radial-gradient(circle, #cddc39, #9e9d24); box-shadow: 0 0 25px #cddc39; }
+.projectile-rock { background: radial-gradient(circle, #bdbdbd, #757575); box-shadow: 0 0 25px #bdbdbd; }
+.projectile-ghost { background: radial-gradient(circle, #7e57c2, #5e35b1); box-shadow: 0 0 25px #7e57c2; }
+.projectile-dragon { background: radial-gradient(circle, #673ab7, #4527a0); box-shadow: 0 0 30px #673ab7; }
+.projectile-dark { background: radial-gradient(circle, #424242, #212121); box-shadow: 0 0 25px #424242; }
+.projectile-steel { background: radial-gradient(circle, #c0c0c0, #90a4ae); box-shadow: 0 0 25px #c0c0c0; }
+.projectile-fairy { background: radial-gradient(circle, #fce4ec, #f8bbd0); box-shadow: 0 0 30px #fce4ec; }
+.projectile-normal { background: radial-gradient(circle, #fff, #ccc); box-shadow: 0 0 20px #fff; }
 /* ===== IMPACT EFFECT ===== */
 .impact-effect {
   position: absolute;
@@ -1213,6 +1217,38 @@
 @keyframes slideDown {
   0% { transform: translate(-50%, -100px); opacity: 0; }
   100% { transform: translate(-50%, -50%); opacity: 1; }
+}
+
+/* ===== FAINT ANIMATION - Grayed Out ===== */
+.fainted .pokemon-sprite {
+  animation: faintGray 0.8s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes faintGray {
+  0% {
+    filter: grayscale(0) brightness(1);
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    filter: grayscale(1) brightness(0.4);
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+
+/* Reset when new battle starts */
+.sprite-container.reset .pokemon-sprite {
+  animation: faintReset 0.3s ease-in-out forwards;
+}
+
+@keyframes faintReset {
+  to {
+    filter: grayscale(0) brightness(1);
+    opacity: 1;
+    transform: scale(1);
+  }
 }
   </style>
 </head>
