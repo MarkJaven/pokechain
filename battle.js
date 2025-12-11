@@ -255,15 +255,11 @@ async function endTournament() {
   const player = sorted.find(p => p.isPlayer);
   const rank = sorted.indexOf(player) + 1;
 
-  // Get ACCURATE reward from contract
-  let contractReward = '0';
-  try {
-    contractReward = await getContractRewardCalculation(gameState.tournamentId, player.wins);
-  } catch (e) {
-    console.warn('⚠️ Using local reward calculation:', e);
-    const local = calculateRewards();
-    contractReward = local.total.toString();
-  }
+  // ✅ FIX: Calculate reward LOCALLY using Solidity-matching formula
+  const rewards = calculateRewards();
+  const totalReward = rewards.total; // This will be the accurate amount (e.g., 123)
+  
+  console.log(`💰 Calculated reward: ${totalReward} PKCN`); // Should log: 123
 
   UI.resultTitle.textContent = 'Processing Tournament...';
   UI.resultMessage.textContent = 'Submitting results to blockchain...';
@@ -291,8 +287,8 @@ async function endTournament() {
     const isPerfect = player.wins === totalPlayerMatches;
 
     console.log(`✅ Completing tournament with ${player.wins} wins (Perfect: ${isPerfect})`);
-    console.log(`💰 Contract-calculated reward: ${contractReward} PKCN`);
 
+    // Complete tournament on-chain
     UI.resultMessage.textContent = 'Submitting tournament results...';
     const completeTx = await tournamentContract.completeTournament(
       gameState.tournamentId,
@@ -303,12 +299,14 @@ async function endTournament() {
     await completeTx.wait();
     console.log('✅ Tournament completed on-chain');
 
+    // Claim reward
     UI.resultMessage.textContent = 'Claiming your PKCN reward...';
     const claimTx = await tournamentContract.claimReward(gameState.tournamentId);
     await claimTx.wait();
 
     console.log('✅ Reward claimed successfully');
 
+    // Update tournament history
     const history = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
     if (!history.includes(gameState.tournamentId)) {
       history.push(gameState.tournamentId);
@@ -320,7 +318,8 @@ async function endTournament() {
 
     await updateBalanceDisplay();
 
-    showTournamentResult(rank === 1, rank, contractReward, true, gameState.tournamentId);
+    // ✅ Use the locally calculated reward
+    showTournamentResult(rank === 1, rank, totalReward, true, gameState.tournamentId);
 
   } catch (error) {
     console.error('❌ Failed to claim rewards:', error);
@@ -342,39 +341,30 @@ async function endTournament() {
       errorMessage += error.message.substring(0, 100);
     }
     
-    showTournamentResult(rank === 1, rank, contractReward, false, gameState.tournamentId, errorMessage);
+    // ✅ Even if claim fails, show the correct calculated reward
+    showTournamentResult(rank === 1, rank, totalReward, false, gameState.tournamentId, errorMessage);
   }
 }
 
-async function getContractRewardCalculation(tournamentId, wins) {
-  try {
-    if (!window.CONTRACTS?.TOURNAMENT || !window.ABIS?.TOURNAMENT) {
-      throw new Error('Tournament contract not configured');
-    }
-
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const tournamentContract = new ethers.Contract(
-      window.CONTRACTS.TOURNAMENT,
-      window.ABIS.TOURNAMENT,
-      provider
-    );
-
-    const totalPlayerMatches = gameState.participants.length - 1;
-    const isPerfect = wins === totalPlayerMatches;
+// async function getContractRewardCalculation(tournamentId) {
+//   try {
+//     const provider = await window.wallet.getProvider();
+//     const signer = await window.wallet.getSigner();
+//     const tournamentContract = new ethers.Contract(
+//       window.CONTRACTS.TOURNAMENT,
+//       window.ABIS.TOURNAMENT,
+//       signer
+//     );
     
-    const tournamentData = await tournamentContract.getTournamentData(tournamentId);
-    const difficulty = tournamentData[2];
-    
-    const reward = await tournamentContract.calculateReward(difficulty, wins, isPerfect);
-    
-    return reward.toString();
-  } catch (error) {
-    console.warn('⚠️ Could not read reward from contract, using local calculation:', error);
-    const localRewards = calculateRewards();
-    return localRewards.total.toString();
-  }
-}
-
+//     // This will now work with the corrected ABI
+//     const tournamentData = await tournamentContract.getTournamentData(tournamentId);
+//     console.log("Tournament data:", tournamentData);
+//     return tournamentData;
+//   } catch (error) {
+//     console.error("Error fetching tournament data:", error);
+//     throw error;
+//   }
+// }
 function showTournamentResult(isVictory, rank, totalReward, success = true, tournamentId = null, errorMessage = null) {
   UI.resultTitle.textContent = isVictory ? 'TOURNAMENT CHAMPION!' : 'TOURNAMENT COMPLETE';
   
@@ -410,7 +400,7 @@ function showTournamentResult(isVictory, rank, totalReward, success = true, tour
     };
   }
   
-  log('battle', `🎉 Tournament ended! Rank: #${rank}, Wins: ${player.wins}/${gameState.participants.length - 1}, Rewards: ${totalReward} PKCN`);
+  log('battle', `Tournament ended! Rank: #${rank}, Wins: ${player.wins}/${gameState.participants.length - 1}, Rewards: ${totalReward} PKCN`);
 }
 
 async function updateBalanceDisplay() {
@@ -428,18 +418,45 @@ function calculateRewards() {
   const player = gameState.participants.find(p => p.isPlayer);
   const totalPlayerMatches = gameState.participants.length - 1;
   
-  const baseReward = { easy: 10, normal: 25, hard: 50, insane: 100 }[gameState.difficulty];
-  const winBonus = player.wins * baseReward;
-  const isPerfect = player.wins === totalPlayerMatches;
-  const perfectBonus = isPerfect ? baseReward * 5 : 0;
+  // **MATCH SOLIDITY BASE REWARDS EXACTLY**
+  const baseRewards = { easy: 5, normal: 15, hard: 25, insane: 35 };
+  const base = baseRewards[gameState.difficulty];
   
-  console.log(`[Rewards] Wins: ${player.wins}/${totalPlayerMatches}, Perfect: ${isPerfect}, Bonus: ${perfectBonus}`);
+  // **LOSS CONDITION: Wins < 3 = 0 reward**
+  if (player.wins < 3) {
+    console.log(`[Rewards] LOSS CONDITION - Wins: ${player.wins} < 3, Reward: 0 PKCN`);
+    return {
+      base: base,
+      wins: 0,
+      perfect: 0,
+      total: 0
+    };
+  }
+  
+  // **MATCH SOLIDITY FORMULA EXACTLY**
+  // Integer division in Solidity: base / 2 (floor)
+  const baseDiv2 = Math.floor(base / 2); // 25 -> 12, 15 -> 7, etc.
+  const winBonus = player.wins * baseDiv2;
+  
+  const isPerfect = player.wins === totalPlayerMatches;
+  const perfectBonus = isPerfect ? base * 2 : 0;
+  
+  let total = base + winBonus + perfectBonus;
+  
+  // **HARD CAP AT 250 PKCN**
+  const MAX_REWARD = 250;
+  if (total > MAX_REWARD) {
+    console.log(`[Rewards] CAPPED: ${total} > ${MAX_REWARD}, using ${MAX_REWARD}`);
+    total = MAX_REWARD;
+  }
+  
+  console.log(`[Rewards] Difficulty: ${gameState.difficulty}, Base: ${base}, Wins: ${player.wins}/${totalPlayerMatches}, Perfect: ${isPerfect}, Total: ${total} PKCN`);
   
   return {
-    base: baseReward,
+    base: base,
     wins: winBonus,
     perfect: perfectBonus,
-    total: baseReward + winBonus + perfectBonus
+    total: total
   };
 }
 

@@ -72,27 +72,27 @@ window.ABIS = {
     "event PokemonMinted(uint256 indexed tokenId, address indexed owner, string name, string rarity)"
   ],
   
-  // TOURNAMENT ABI
-  TOURNAMENT: [
-    "function ENTRY_FEE() view returns (uint256)",
-    "function startTournament(string tournamentId, uint256 tokenId, string difficulty, uint256 opponentCount) external",
-    "function completeTournament(string tournamentId, uint256 wins, bool isPerfect) external",
-    "function claimReward(string tournamentId) external",
-    "function calculateReward(string difficulty, uint256 wins, bool isPerfect) view returns (uint256)",
-    "function getEstimatedRewards(string difficulty, uint256 opponentCount) view returns (uint256 minReward, uint256 maxReward)",
-    "function getActiveTournament(address) external view returns (string, bool, bool)",
-    "function getUnclaimedRewards(address) external view returns (string[], uint256[])",
-    "function getTournamentData(string) external view returns (address, uint256, string, uint256, uint256, bool, bool, uint256, uint256, uint256)",
-    "function getLockStatus(uint256) external view returns (bool, string)",
-    "function canStartTournament(address, uint256) external view returns (bool, string)",
-    "function expireTournament(string) external",
-    "event TournamentStarted(string indexed tournamentId, address indexed player, uint256 tokenId, string difficulty, uint256 opponentCount, uint256 entryFee)",
-    "event TournamentCompleted(string indexed tournamentId, uint256 wins, uint256 totalReward)",
-    "event RewardClaimed(string indexed tournamentId, address indexed player, uint256 reward)",
-    "event TournamentExpired(string indexed tournamentId, address indexed player)",
-    "event NFTUnlocked(uint256 indexed tokenId, address indexed player)",
-    "event PlayerCleared(address indexed player)"
-  ],
+ // TOURNAMENT ABI
+TOURNAMENT: [
+  "function ENTRY_FEE() view returns (uint256)",
+  "function startTournament(string tournamentId, uint256 tokenId, string difficulty, uint256 opponentCount) external",
+  "function completeTournament(string tournamentId, uint256 wins, bool isPerfect) external",
+  "function claimReward(string tournamentId) external",
+  "function calculateReward(string difficulty, uint256 wins, bool isPerfect) view returns (uint256)",
+  "function getEstimatedRewards(string difficulty, uint256 opponentCount) view returns (uint256 minReward, uint256 maxReward)",
+  "function getActiveTournament(address) external view returns (string, bool, bool)",
+  "function getUnclaimedRewards(address) external view returns (string[], uint256[])",
+  "function getTournamentData(string) external view returns ((address,uint256,string,uint256,uint256,bool,bool,uint256,uint256,uint256))", // FIXED
+  "function getLockStatus(uint256) external view returns (bool, string)",
+  "function canStartTournament(address, uint256) external view returns (bool, string)",
+  "function expireTournament(string) external",
+  "event TournamentStarted(string indexed tournamentId, address indexed player, uint256 tokenId, string difficulty, uint256 opponentCount, uint256 entryFee)",
+  "event TournamentCompleted(string indexed tournamentId, uint256 wins, uint256 totalReward)",
+  "event RewardClaimed(string indexed tournamentId, address indexed player, uint256 reward)",
+  "event TournamentExpired(string indexed tournamentId, address indexed player)",
+  "event NFTUnlocked(uint256 indexed tokenId, address indexed player)",
+  "event PlayerCleared(address indexed player)"
+],
   
   // NFT_LOCK_GUARD ABI
   NFT_LOCK_GUARD: [
