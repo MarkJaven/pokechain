@@ -819,30 +819,41 @@
 
     /* ===== NEW: HP HIDING SYSTEM ===== */
     .hp-container {
-      transition: opacity 0.3s ease, transform 0.3s ease;
+      transition: opacity 0.2s ease;
     }
     
     .hp-container.hidden {
       opacity: 0;
-      transform: scale(0.95);
       pointer-events: none;
     }
     
-    .hp-container.player-turn {
-      opacity: 1;
-      transform: scale(1);
+    /* AI Battle Indicator */
+    .ai-battle-indicator {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 2rem;
+      font-weight: 900;
+      color: var(--warning);
+      text-shadow: 
+        0 0 20px rgba(255, 217, 61, 1), 
+        0 0 40px rgba(255, 217, 61, 0.6),
+        2px 2px 4px rgba(0, 0, 0, 0.8);
+      z-index: 15;
+      pointer-events: none;
+      animation: pulse 1.5s infinite;
+      display: none;
     }
     
-    .battle-arena.fast-mode .sprite-container.attacking {
-      animation-duration: 0.3s !important;
+    .ai-battle-indicator.active {
+      display: block;
     }
-    
-    .battle-arena.fast-mode .damage-number {
-      animation-duration: 0.8s !important;
-    }
-    
-    .battle-arena.fast-mode .pokemon-sprite.hit-flinch {
-      animation-duration: 0.15s !important;
+
+    /* Enhanced projectile travel for better hit effect */
+    .battle-arena.enhanced-hit .sprite-container.attacking::before {
+      animation-duration: 0.4s !important;
+      animation-timing-function: ease-in !important;
     }
 
     /* ===== RESPONSIVE ===== */
@@ -932,32 +943,6 @@
         width: 160px;
       }
     }
-
-    .hp-container {
-      transition: opacity 0.2s ease;
-    }
-    
-    .hp-container.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-    
-    /* 20X FASTER ANIMATIONS */
-    .battle-arena.super-fast-mode .sprite-container.attacking {
-      animation-duration: 0.05s !important;
-    }
-    
-    .battle-arena.super-fast-mode .damage-number {
-      animation-duration: 0.1s !important;
-    }
-    
-    .battle-arena.super-fast-mode .pokemon-sprite.hit-flinch {
-      animation-duration: 0.05s !important;
-    }
-    
-    .battle-arena.super-fast-mode .sprite-container.dodge {
-      animation-duration: 0.1s !important;
-    }
   </style>
 </head>
 <body>
@@ -983,6 +968,10 @@
     <!-- BATTLE ARENA - CENTER -->
     <div class="battle-arena-container">
       <div class="battle-arena" id="battleArena" data-round="1">
+        <div class="vs-indicator">VS</div>
+        
+        <!-- AI Battle Indicator -->
+        <div class="ai-battle-indicator" id="aiBattleIndicator">AI BATTLE</div>
 
         <!-- Enemy Pokemon -->
         <div class="pokemon-wrapper enemy-pokemon" id="enemyWrapper">
@@ -1027,7 +1016,6 @@
         <button id="defendBtn" class="defend-btn">DEFEND</button>
       </div>
     </div>
-
   </div>
 
   <!-- RESULT SCREEN -->

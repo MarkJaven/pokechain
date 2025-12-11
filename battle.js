@@ -1,5 +1,5 @@
 // ===================================================================
-// BATTLE ENGINE - Blockchain Enhanced (ULTRA-FAST MODE)
+// BATTLE ENGINE - Blockchain Enhanced (AI-ONLY SPEED-UP)
 // ===================================================================
 
 const gameState = {
@@ -41,7 +41,8 @@ const UI = {
   resultTitle: document.getElementById('resultTitle'),
   resultMessage: document.getElementById('resultMessage'),
   loading: document.getElementById('loadingOverlay'),
-  arena: document.getElementById('battleArena')
+  arena: document.getElementById('battleArena'),
+  aiIndicator: document.getElementById('aiBattleIndicator')
 };
 
 const TYPE_CHART = {
@@ -172,29 +173,29 @@ function getAbilityProperties(abilityName, pokemonTypes) {
 }
 
 // ===================================================================
-// INITIALIZATION
+// INITIALIZATION (REMOVED MATCH DELAYS)
 // ===================================================================
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
+    // MINIMAL LOADING - Instant start
     UI.loading.classList.remove('hidden');
     
     const urlParams = new URLSearchParams(window.location.search);
-    gameState.tournamentId = urlParams.get('tournamentId');
+    gameState.tournamentId = urlParams.get('tournamentId') || localStorage.getItem('currentTournamentId');
     
-    if (!gameState.tournamentId) {
-      gameState.tournamentId = localStorage.getItem('currentTournamentId');
-    }
-    
-    if (!gameState.tournamentId) {
-      console.warn('⚠️ No tournament ID found. Tournament results cannot be saved to blockchain.');
-    } else {
+    if (gameState.tournamentId) {
       console.log('🎯 Tournament ID:', gameState.tournamentId);
+    } else {
+      console.warn('⚠️ No tournament ID found.');
     }
     
     await initializeTournament();
     UI.loading.classList.add('hidden');
-    startNextMatch();
+    
+    // CRITICAL FIX: Ensure startNextMatch completes before calling executeTurn
+    await startNextMatch();
+    
   } catch (error) {
     console.error('Initialization failed:', error);
     alert(`Failed to load tournament: ${error.message}. Returning to lobby.`);
@@ -230,6 +231,11 @@ async function initializeTournament() {
   
   generateMatchups();
   
+  // CRITICAL FIX: Ensure matchups were generated
+  if (gameState.matchups.length === 0) {
+    throw new Error('Failed to generate matchups. No valid opponents.');
+  }
+  
   UI.difficulty.textContent = gameState.difficulty.toUpperCase();
   UI.totalMatches.textContent = gameState.matchups.length;
   
@@ -238,7 +244,7 @@ async function initializeTournament() {
 }
 
 // ===================================================================
-// TOURNAMENT COMPLETION
+// TOURNAMENT COMPLETION WITH ACCURATE REWARDS
 // ===================================================================
 
 async function endTournament() {
@@ -249,6 +255,16 @@ async function endTournament() {
   const player = sorted.find(p => p.isPlayer);
   const rank = sorted.indexOf(player) + 1;
 
+  // Get ACCURATE reward from contract
+  let contractReward = '0';
+  try {
+    contractReward = await getContractRewardCalculation(gameState.tournamentId, player.wins);
+  } catch (e) {
+    console.warn('⚠️ Using local reward calculation:', e);
+    const local = calculateRewards();
+    contractReward = local.total.toString();
+  }
+
   UI.resultTitle.textContent = 'Processing Tournament...';
   UI.resultMessage.textContent = 'Submitting results to blockchain...';
   UI.resultScreen.classList.remove('hidden');
@@ -258,8 +274,6 @@ async function endTournament() {
       throw new Error('No tournament ID found. Cannot save results to blockchain.');
     }
 
-    const contractReward = await getContractRewardCalculation(gameState.tournamentId, player.wins);
-    
     if (!window.wallet || !window.wallet.getAccount || !window.wallet.getAccount()) {
       throw new Error('Wallet not connected. Please connect your wallet to claim rewards.');
     }
@@ -328,8 +342,7 @@ async function endTournament() {
       errorMessage += error.message.substring(0, 100);
     }
     
-    const localRewards = calculateRewards();
-    showTournamentResult(rank === 1, rank, localRewards.total, false, gameState.tournamentId, errorMessage);
+    showTournamentResult(rank === 1, rank, contractReward, false, gameState.tournamentId, errorMessage);
   }
 }
 
@@ -358,7 +371,7 @@ async function getContractRewardCalculation(tournamentId, wins) {
   } catch (error) {
     console.warn('⚠️ Could not read reward from contract, using local calculation:', error);
     const localRewards = calculateRewards();
-    return localRewards.total;
+    return localRewards.total.toString();
   }
 }
 
@@ -722,15 +735,20 @@ async function startNextMatch() {
     return;
   }
   
-  UI.loading.classList.remove('hidden');
   UI.actionSelection.classList.add('hidden');
   
-  // HIDE HP BARS AT MATCH START (AI turns)
-  hideHpBars();
-  
+  // INSTANT MATCH TRANSITION - No loading overlay
   const matchup = gameState.matchups[gameState.matchIndex];
   const p1Meta = gameState.participants[matchup.p1Index];
   const p2Meta = gameState.participants[matchup.p2Index];
+  
+  // CRITICAL FIX: Ensure we have valid participants
+  if (!p1Meta || !p2Meta) {
+    throw new Error('Invalid matchup data: missing participants');
+  }
+  
+  // Check if this is AI vs AI battle
+  const isAIvsAI = !p1Meta.isPlayer && !p2Meta.isPlayer;
   
   gameState.currentBattle = {
     p1: createBattlePokemon(p1Meta),
@@ -740,6 +758,11 @@ async function startNextMatch() {
     defending: null,
     actionsThisRound: 0
   };
+  
+  // CRITICAL FIX: Ensure battle state was created
+  if (!gameState.currentBattle || !gameState.currentBattle.p1 || !gameState.currentBattle.p2) {
+    throw new Error('Failed to create battle state');
+  }
   
   resetBattlePokemonHp(gameState.currentBattle.p1);
   resetBattlePokemonHp(gameState.currentBattle.p2);
@@ -752,19 +775,35 @@ async function startNextMatch() {
   log('battle', `⚔️ Match ${gameState.matchIndex}: ${p1Meta.name} vs ${p2Meta.name}`);
   log('battle', `📊 Round ${gameState.currentBattle.round} begins!`);
   
+  // Show AI Battle indicator if AI vs AI
+  if (isAIvsAI) {
+    UI.aiIndicator.classList.add('active');
+  } else {
+    UI.aiIndicator.classList.remove('active');
+  }
+  
   UI.arena.setAttribute('data-round', gameState.currentBattle.round);
   
-  await new Promise(resolve => setTimeout(resolve, 200));
-  
-  UI.loading.classList.add('hidden');
+  // INSTANT RENDER - No delays
   renderBattle();
   updateStandings();
   
-  setTimeout(() => executeTurn(), 100);
+  // CRITICAL FIX: Only call executeTurn after everything is set up
+  setTimeout(() => {
+    if (gameState.currentBattle) {
+      executeTurn();
+    } else {
+      console.error('CRITICAL: currentBattle is null before executeTurn');
+    }
+  }, 50);
 }
 
 function executeTurn() {
-  if (!gameState.battleActive || !gameState.currentBattle) return;
+  // CRITICAL FIX: Add null check
+  if (!gameState.battleActive || !gameState.currentBattle) {
+    console.error('executeTurn called without active battle');
+    return;
+  }
   
   const { p1, p2 } = gameState.currentBattle;
   
@@ -775,19 +814,29 @@ function executeTurn() {
   
   const currentBattler = gameState.currentBattle.turn === 0 ? p1 : p2;
   
+  // Check if this is AI vs AI battle
+  const isAIvsAI = !p1.isPlayer && !p2.isPlayer;
+  
   if (currentBattler.isPlayer) {
-    // SHOW HP BARS ON PLAYER TURN (NO HIDE)
+    // PLAYER TURN - Normal speed, show HP
+    UI.arena.classList.remove('super-fast-mode');
     showHpBars();
     enablePlayerActions(currentBattler);
   } else {
-    // HIDE HP BARS ON AI TURN + 20X FASTER
-    hideHpBars();
-    setTimeout(() => executeAIActions(currentBattler), 50); // 50ms delay for AI
+    // AI TURN
+    if (isAIvsAI) {
+      // AI vs AI - Super fast, hide HP
+      hideHpBars();
+      setTimeout(() => executeAIActions(currentBattler), 30); // 30ms AI delay
+    } else {
+      // AI vs Player - Normal speed for player, but AI action is quick
+      showHpBars(); // Player needs to see what's happening
+      setTimeout(() => executeAIActions(currentBattler), 200); // Slightly slower so player can follow
+    }
   }
 }
 
 function showHpBars() {
-  // Remove hidden class ONLY - keep normal speed
   document.getElementById('enemyHpContainer').classList.remove('hidden');
   document.getElementById('playerHpContainer').classList.remove('hidden');
   
@@ -802,10 +851,9 @@ function showHpBars() {
 }
 
 function hideHpBars() {
-  // Add super-fast mode AND hide HP
-  UI.arena.classList.add('super-fast-mode');
   document.getElementById('enemyHpContainer').classList.add('hidden');
   document.getElementById('playerHpContainer').classList.add('hidden');
+  UI.arena.classList.add('super-fast-mode');
 }
 
 function enablePlayerActions(pokemon) {
@@ -852,6 +900,8 @@ function completeAction() {
   gameState.currentBattle.turn = 1 - gameState.currentBattle.turn;
   gameState.currentBattle.actionsThisRound++;
   
+  const isAIvsAI = isCurrentBattleAIvsAI();
+  
   if (gameState.currentBattle.actionsThisRound >= 2) {
     const { p1, p2 } = gameState.currentBattle;
     
@@ -860,13 +910,17 @@ function completeAction() {
     UI.arena.setAttribute('data-round', gameState.currentBattle.round);
     
     setTimeout(() => {
-      if (gameState.battleActive) {
+      if (gameState.battleActive && gameState.currentBattle) {
         log('battle', `📊 Round ${gameState.currentBattle.round} begins!`);
         executeTurn();
       }
-    }, 200); // Brief pause between rounds
+    }, isAIvsAI ? 100 : 600); // Faster round transition for AI vs AI
   } else {
-    setTimeout(() => executeTurn(), 50); // 50ms between actions
+    setTimeout(() => {
+      if (gameState.battleActive && gameState.currentBattle) {
+        executeTurn();
+      }
+    }, isAIvsAI ? 30 : 300); // Faster action transition for AI vs AI
   }
 }
 
@@ -1045,13 +1099,21 @@ async function handleFaint(faintedPokemon) {
   
   updateStandings();
   
+  // INSTANT transition to next match
   setTimeout(() => {
     if (gameState.matchIndex < gameState.matchups.length) {
       startNextMatch();
     } else {
       endTournament();
     }
-  }, 800); // Shortened victory screen
+  }, isCurrentBattleAIvsAI() ? 400 : 1500); // Faster for AI vs AI
+}
+
+// Helper to check if current battle is AI vs AI
+function isCurrentBattleAIvsAI() {
+  if (!gameState.currentBattle) return false;
+  const { p1, p2 } = gameState.currentBattle;
+  return !p1.isPlayer && !p2.isPlayer;
 }
 
 // ===================================================================
@@ -1224,6 +1286,7 @@ function showDamageNumber(pokemon, damage) {
   setTimeout(() => damageEl.remove(), 1500);
 }
 
+// ENHANCED ATTACK ANIMATION - Projectiles travel further to hit target
 function applyAttackAnimation(attacker, moveType) {
   const isPlayer = attacker.isPlayer;
   const wrapper = isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
@@ -1231,20 +1294,25 @@ function applyAttackAnimation(attacker, moveType) {
   
   sprite.className = 'sprite-container';
   
-  const projX = isPlayer ? 120 : -120;
-  const projY = isPlayer ? -60 : 60;
+  // INCREASED projectile travel distance for better hit effect
+  const projX = isPlayer ? 180 : -180; // Increased from 120
+  const projY = isPlayer ? -80 : 80;  // Increased from 60
   
   setTimeout(() => {
     sprite.style.setProperty('--proj-x', `${projX}px`);
     sprite.style.setProperty('--proj-y', `${projY}px`);
     sprite.classList.add(`attack-${moveType || 'normal'}`, 'attacking');
-  }, 100);
+    
+    // Add enhanced hit effect class for better visual
+    UI.arena.classList.add('enhanced-hit');
+  }, 50);
   
   setTimeout(() => {
     sprite.classList.remove(`attack-${moveType || 'normal'}`, 'attacking');
     sprite.style.removeProperty('--proj-x');
     sprite.style.removeProperty('--proj-y');
-  }, 600);
+    UI.arena.classList.remove('enhanced-hit');
+  }, 500);
 }
 
 function playHitAnimation(defender, damage) {
