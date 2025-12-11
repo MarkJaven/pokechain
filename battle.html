@@ -943,6 +943,277 @@
         width: 160px;
       }
     }
+
+    /* ===== PROJECTILE SYSTEM ===== */
+.projectile {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 15;
+  animation: projectileTravel 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  box-shadow: 0 0 20px currentColor;
+}
+
+@keyframes projectileTravel {
+  0% {
+    transform: scale(0.5) translate(0, 0);
+    opacity: 0.8;
+  }
+  20% {
+    transform: scale(1.2) translate(calc(var(--dx, 100px) * 0.2), calc(var(--dy, -50px) * 0.2));
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.8) translate(var(--dx, 100px), var(--dy, -50px));
+    opacity: 0;
+  }
+}
+
+.projectile-fire { background: radial-gradient(circle, #ff6b00, #ff0000); --dx: 150px; --dy: -50px; }
+.projectile-water { background: radial-gradient(circle, #00c4ff, #0066ff); --dx: 140px; --dy: -40px; }
+.projectile-grass { background: radial-gradient(circle, #6bcf7f, #2d8a3d); --dx: 145px; --dy: -45px; }
+.projectile-electric { background: radial-gradient(circle, #ffeb3b, #ffc107); --dx: 160px; --dy: -55px; }
+.projectile-ice { background: radial-gradient(circle, #b3e5fc, #81d4fa); --dx: 135px; --dy: -42px; }
+.projectile-fighting { background: radial-gradient(circle, #ff5722, #d84315); --dx: 155px; --dy: -48px; }
+.projectile-poison { background: radial-gradient(circle, #9c27b0, #6a1b9a); --dx: 130px; --dy: -38px; }
+.projectile-ground { background: radial-gradient(circle, #8d6e63, #5d4037); --dx: 150px; --dy: -30px; }
+.projectile-flying { background: radial-gradient(circle, #b2ebf2, #80deea); --dx: 165px; --dy: -60px; }
+.projectile-psychic { background: radial-gradient(circle, #e91e63, #ad1457); --dx: 145px; --dy: -42px; }
+.projectile-bug { background: radial-gradient(circle, #cddc39, #9e9d24); --dx: 132px; --dy: -35px; }
+.projectile-rock { background: radial-gradient(circle, #bdbdbd, #757575); --dx: 125px; --dy: -32px; }
+.projectile-ghost { background: radial-gradient(circle, #7e57c2, #5e35b1); --dx: 142px; --dy: -40px; }
+.projectile-dragon { background: radial-gradient(circle, #673ab7, #4527a0); --dx: 170px; --dy: -50px; }
+.projectile-dark { background: radial-gradient(circle, #424242, #212121); --dx: 148px; --dy: -45px; }
+.projectile-steel { background: radial-gradient(circle, #c0c0c0, #90a4ae); --dx: 128px; --dy: -33px; }
+.projectile-fairy { background: radial-gradient(circle, #fce4ec, #f8bbd0); --dx: 140px; --dy: -37px; }
+.projectile-normal { background: radial-gradient(circle, #fff, #ccc); --dx: 130px; --dy: -35px; }
+
+/* ===== IMPACT EFFECT ===== */
+.impact-effect {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 20;
+  animation: impactExplosion 0.5s ease-out forwards;
+  background: radial-gradient(circle, var(--impact-color, #ff6b00), transparent);
+  box-shadow: 0 0 30px var(--impact-color, #ff6b00);
+  transform: translate(-50%, -50%);
+}
+
+@keyframes impactExplosion {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+    filter: brightness(0.5);
+  }
+}
+
+/* ===== SCREEN SHAKE ===== */
+.arena-shake {
+  animation: screenShake 0.3s ease-out;
+}
+
+@keyframes screenShake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-4px, -2px); }
+  75% { transform: translate(4px, 2px); }
+}
+
+/* ===== CRITICAL HIT FLASH ===== */
+.critical-flash {
+  animation: criticalFlash 0.5s ease-out;
+}
+
+@keyframes criticalFlash {
+  0% { filter: brightness(1) contrast(1); }
+  50% { filter: brightness(2) contrast(1.5) saturate(2); }
+  100% { filter: brightness(1) contrast(1); }
+}
+
+/* ===== ENHANCED HIT ANIMATIONS ===== */
+.hit-flinch {
+  animation: hitFlinch 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes hitFlinch {
+  0% { transform: translateX(0) scale(1); }
+  30% { transform: translateX(-15px) scale(0.95) rotate(-8deg); }
+  60% { transform: translateX(10px) scale(1.05) rotate(5deg); }
+  100% { transform: translateX(0) scale(1) rotate(0deg); }
+}
+
+.hit-knockback {
+  animation: hitKnockback 0.3s ease-out;
+}
+
+@keyframes hitKnockback {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(var(--knockback-x, -20px)); }
+}
+
+.player-pokemon.hit-knockback { --knockback-x: 20px; }
+.enemy-pokemon.hit-knockback { --knockback-x: -20px; }
+
+.hit-flash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100px;
+  height: 100px;
+  background: radial-gradient(circle, rgba(255,255,255,0.8), transparent);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: hitFlash 0.3s ease-out forwards;
+}
+
+@keyframes hitFlash {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
+}
+
+/* ===== ENHANCED DODGE ===== */
+.dodge {
+  animation: dodgeRoll 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+@keyframes dodgeRoll {
+  0% { transform: translateX(0) scale(1); }
+  20% { transform: translateX(-10px) scale(0.9); }
+  60% { transform: translateX(30px) scale(0.8) rotate(360deg); }
+  100% { transform: translateX(0) scale(1) rotate(0deg); }
+}
+
+.dodge-effect {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 20px;
+  background: radial-gradient(ellipse, rgba(255,255,255,0.5), transparent);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: dustCloud 0.5s ease-out forwards;
+}
+
+@keyframes dustCloud {
+  0% { transform: translateX(-50%) scale(0); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1.5); opacity: 0; }
+}
+
+/* ===== ENHANCED DEFEND ANIMATIONS ===== */
+.sprite-container.defending::after {
+  content: '';
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  border: 4px solid var(--info);
+  border-radius: 50%;
+  animation: shieldForm 0.3s ease-out forwards, shieldPulse 0.8s infinite 0.3s;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+}
+
+@keyframes shieldForm {
+  0% { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+@keyframes shieldPulse {
+  0%, 100% { box-shadow: 0 0 15px var(--info); }
+  50% { box-shadow: 0 0 30px var(--info), 0 0 50px var(--info); }
+}
+
+.shield-barrier {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90px;
+  height: 90px;
+  border: 3px solid rgba(0, 196, 255, 0.6);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: barrierFlash 0.5s ease-out;
+}
+
+@keyframes barrierFlash {
+  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+  50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+}
+
+/* ===== HEAL ANIMATION ===== */
+.pokemon-sprite.healing {
+  animation: healPulse 1s ease-in-out;
+}
+
+@keyframes healPulse {
+  0%, 100% { filter: brightness(1) drop-shadow(0 0 10px #00ff9d); }
+  50% { filter: brightness(1.4) drop-shadow(0 0 30px #00ff9d) saturate(1.5); }
+}
+
+.pokemon-sprite.healing::after {
+  content: '✨';
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 2rem;
+  animation: sparkleFloat 1s ease-out forwards;
+}
+
+@keyframes sparkleFloat {
+  0% { transform: translateX(-50%) translateY(0); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-40px); opacity: 0; }
+}
+
+/* ===== AI BATTLE INDICATOR ===== */
+.ai-battle-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--warning);
+  text-shadow: 
+    0 0 20px rgba(255, 217, 61, 1), 
+    0 0 40px rgba(255, 217, 61, 0.6),
+    2px 2px 4px rgba(0, 0, 0, 0.8);
+  z-index: 15;
+  pointer-events: none;
+  animation: pulse 1.5s infinite, slideDown 0.5s ease-out;
+  display: none;
+  padding: 10px 30px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 10px;
+  border: 2px solid var(--warning);
+}
+
+.ai-battle-indicator.active {
+  display: block;
+}
+
+@keyframes slideDown {
+  0% { transform: translate(-50%, -100px); opacity: 0; }
+  100% { transform: translate(-50%, -50%); opacity: 1; }
+}
   </style>
 </head>
 <body>

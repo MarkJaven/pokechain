@@ -958,20 +958,37 @@ async function executeAIActions(attacker) {
       name: 'Tackle',
       shortEffect: ''
     };
+    
+    // **FIX**: Ensure AI attacks animate properly
     await executeAbility(attacker, ability);
   }
   
   completeAction();
 }
 
+function getAttackDirection(attacker, defender) {
+  const attackerWrapper = attacker.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
+  const defenderWrapper = defender.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
+  
+  const attackerRect = attackerWrapper.getBoundingClientRect();
+  const defenderRect = defenderWrapper.getBoundingClientRect();
+  const arenaRect = UI.arena.getBoundingClientRect();
+  
+  const deltaX = (defenderRect.left + defenderRect.width/2) - (attackerRect.left + attackerRect.width/2);
+  const deltaY = (defenderRect.top + defenderRect.height/2) - (attackerRect.top + attackerRect.height/2);
+  
+  return { deltaX, deltaY, distance: Math.sqrt(deltaX*deltaX + deltaY*deltaY) };
+}
+
 async function executeAbility(user, ability) {
   log('ability', `💥 ${user.name} used ${ability.name}!`);
   
-  const { power, type: moveType, damageClass } = getAbilityProperties(ability.name, user.types);
-  applyAttackAnimation(user, moveType);
-  
+  const moveType = getAbilityType(ability.name, user.types);
   const { p1, p2 } = gameState.currentBattle;
   const opponent = user === p1 ? p2 : p1;
+  
+  // **CRITICAL FIX**: Trigger attack animation for both AI and player
+  applyAttackAnimation(user, moveType, opponent);
   
   if (!calculateHitChance(user, opponent)) {
     log('effectiveness', '💨 Attack missed!');
@@ -986,33 +1003,107 @@ async function executeAbility(user, ability) {
     const actualHeal = Math.min(healAmount, Math.floor(user.maxHp * 0.5));
     
     user.currentHp = Math.min(user.maxHp, ensureNumber(user.currentHp) + actualHeal);
-    
     log('heal', `💚 ${user.name} restored ${actualHeal} HP!`);
     updateHpBar(user);
+    
+    // Heal animation
+    playHealAnimation(user);
     return;
   }
   
-  const damage = calculateDamage(power, moveType, user, opponent, damageClass);
-
+  let power = 60;
+  if (effect.includes('heavy') || effect.includes('powerful')) power = 90;
+  else if (effect.includes('strong')) power = 75;
+  else if (effect.includes('light') || effect.includes('weak')) power = 40;
+  
+  let damage = calculateDamage(power, moveType, user, opponent);
+  
   if (gameState.currentBattle.defending === opponent) {
     const outcome = calculateDefenseOutcome(opponent);
-    const reducedDamage = applyDefenseReduction(damage, outcome);
-    
-    opponent.currentHp = Math.max(0, ensureNumber(opponent.currentHp) - reducedDamage);
-    
-    log('damage', `💢 Dealt ${reducedDamage} damage!`);
-    showDamageNumber(opponent, reducedDamage);
-  } else {
-    opponent.currentHp = Math.max(0, ensureNumber(opponent.currentHp) - damage);
-    
-    log('damage', `💢 Dealt ${damage} damage!`);
-    showDamageNumber(opponent, damage);
+    damage = applyDefenseReduction(damage, outcome);
   }
   
+  if (isCriticalHit()) {
+    damage = Math.floor(damage * 1.5);
+    log('effectiveness', '❗ CRITICAL HIT!');
+    // Add critical hit flash
+    UI.arena.classList.add('critical-flash');
+    setTimeout(() => UI.arena.classList.remove('critical-flash'), 500);
+  }
+  
+  opponent.currentHp = Math.max(0, ensureNumber(opponent.currentHp) - damage);
+  
+  // **ENHANCED IMPACT SEQUENCE**
+  await playImpactAnimation(user, opponent, moveType);
+  
+  log('damage', `💢 Dealt ${damage} damage!`);
+  showDamageNumber(opponent, damage);
   updateHpBar(opponent);
-  playHitAnimation(opponent, damage);
   
   if (opponent.currentHp === 0) await handleFaint(opponent);
+}
+
+// New: Impact animation with projectile and hit effect
+async function playImpactAnimation(attacker, defender, moveType) {
+  return new Promise(resolve => {
+    const direction = getAttackDirection(attacker, defender);
+    const projectile = createProjectile(moveType, attacker);
+    
+    // Create impact effect on defender
+    const impact = document.createElement('div');
+    impact.className = 'impact-effect';
+    impact.style.setProperty('--impact-color', getTypeColor(moveType));
+    
+    const defenderSprite = defender.isPlayer ? UI.player.sprite : UI.enemy.sprite;
+    const defenderWrapper = defender.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
+    
+    // Position impact on defender
+    const rect = defenderSprite.getBoundingClientRect();
+    const arenaRect = UI.arena.getBoundingClientRect();
+    impact.style.left = `${rect.left + rect.width/2 - arenaRect.left}px`;
+    impact.style.top = `${rect.top + rect.height/2 - arenaRect.top}px`;
+    
+    UI.arena.appendChild(impact);
+    
+    // Trigger hit animation
+    playHitAnimation(defender);
+    
+    // Screen shake
+    UI.arena.classList.add('arena-shake');
+    
+    // Cleanup
+    setTimeout(() => {
+      projectile.remove();
+      impact.remove();
+      UI.arena.classList.remove('arena-shake');
+      resolve();
+    }, 800);
+  });
+}
+
+// New: Creates projectile element
+function createProjectile(moveType, attacker) {
+  const projectile = document.createElement('div');
+  projectile.className = `projectile projectile-${moveType}`;
+  
+  const attackerRect = attacker.isPlayer ? UI.player.wrapper.getBoundingClientRect() : UI.enemy.wrapper.getBoundingClientRect();
+  const arenaRect = UI.arena.getBoundingClientRect();
+  
+  projectile.style.left = `${attackerRect.left + attackerRect.width/2 - arenaRect.left}px`;
+  projectile.style.top = `${attackerRect.top + attackerRect.height/2 - arenaRect.top}px`;
+  
+  UI.arena.appendChild(projectile);
+  
+  return projectile;
+}
+
+// New: Heal animation effect
+function playHealAnimation(pokemon) {
+  const wrapper = pokemon.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
+  const sprite = wrapper.querySelector('.pokemon-sprite');
+  
+  sprite.classList.add('healing');
+  setTimeout(() => sprite.classList.remove('healing'), 1000);
 }
 
 function getAbilityType(abilityName, pokemonTypes) {
@@ -1332,18 +1423,23 @@ function applyAttackAnimation(attacker, moveType) {
   }, 500);
 }
 
-function playHitAnimation(defender, damage) {
+function playHitAnimation(defender) {
   const wrapper = defender.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
   const sprite = wrapper.querySelector('.pokemon-sprite');
   
   sprite.classList.add('hit-flinch');
+  wrapper.classList.add('hit-knockback');
   
-  if (damage > 50) {
-    UI.arena.classList.add('taking-damage');
-    setTimeout(() => UI.arena.classList.remove('taking-damage'), 300);
-  }
+  // Add hit flash effect
+  const flash = document.createElement('div');
+  flash.className = 'hit-flash';
+  wrapper.appendChild(flash);
   
-  setTimeout(() => sprite.classList.remove('hit-flinch'), 300);
+  setTimeout(() => {
+    sprite.classList.remove('hit-flinch');
+    wrapper.classList.remove('hit-knockback');
+    flash.remove();
+  }, 500);
 }
 
 function playMissAnimation(defender) {
@@ -1351,9 +1447,18 @@ function playMissAnimation(defender) {
   const sprite = wrapper.querySelector('.sprite-container');
   
   sprite.classList.add('dodge');
-  setTimeout(() => sprite.classList.remove('dodge'), 400);
+  // Add dust effect
+  const dodgeEffect = document.createElement('div');
+  dodgeEffect.className = 'dodge-effect';
+  wrapper.appendChild(dodgeEffect);
+  
+  setTimeout(() => {
+    sprite.classList.remove('dodge');
+    dodgeEffect.remove();
+  }, 600);
 }
 
+// Updated: Defense animations
 function addDefendVisuals(pokemon) {
   const wrapper = pokemon.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
   const hud = wrapper.querySelector('.pokemon-hud');
@@ -1361,12 +1466,44 @@ function addDefendVisuals(pokemon) {
   
   hud.classList.add('defending');
   sprite.classList.add('defending');
+  
+  // Add shield barrier
+  const shield = document.createElement('div');
+  shield.className = 'shield-barrier';
+  wrapper.appendChild(shield);
 }
 
 function removeDefendVisuals() {
   document.querySelectorAll('.defending').forEach(el => {
     el.classList.remove('defending');
   });
+  document.querySelectorAll('.shield-barrier').forEach(el => {
+    el.remove();
+  });
+}
+
+function getTypeColor(moveType) {
+  const colors = {
+    fire: '#ff6b00',
+    water: '#00c4ff',
+    grass: '#6bcf7f',
+    electric: '#ffeb3b',
+    ice: '#b3e5fc',
+    fighting: '#ff5722',
+    poison: '#9c27b0',
+    ground: '#8d6e63',
+    flying: '#b2ebf2',
+    psychic: '#e91e63',
+    bug: '#cddc39',
+    rock: '#bdbdbd',
+    ghost: '#7e57c2',
+    dragon: '#673ab7',
+    dark: '#424242',
+    steel: '#c0c0c0',
+    fairy: '#fce4ec',
+    normal: '#ffffff'
+  };
+  return colors[moveType] || '#ffffff';
 }
 
 // Add missing CSS
