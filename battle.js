@@ -746,6 +746,23 @@ function resetBattlePokemonHp(battleMon) {
   console.log(`[HP RESET] ${battleMon.name}: ${oldHp} → ${battleMon.currentHp}/${battleMon.maxHp}`);
 }
 
+// ✅ NEW: Speed-based turn order function
+function determineFirstAttacker(p1, p2) {
+  if (p1.stats.speed > p2.stats.speed) {
+    log('battle', `⚡ ${p1.name} moves first! (Speed: ${p1.stats.speed})`);
+    return 0;
+  } else if (p2.stats.speed > p1.stats.speed) {
+    log('battle', `⚡ ${p2.name} moves first! (Speed: ${p2.stats.speed})`);
+    return 1;
+  } else {
+    // Speed tie - random decision
+    const random = Math.random() < 0.5 ? 0 : 1;
+    const first = random === 0 ? p1 : p2;
+    log('battle', `⚡ Speed tie! ${first.name} moves first! (Speed: ${p1.stats.speed})`);
+    return random;
+  }
+}
+
 async function startNextMatch() {
   if (gameState.matchIndex >= gameState.matchups.length) {
     endTournament();
@@ -770,7 +787,7 @@ async function startNextMatch() {
   gameState.currentBattle = {
     p1: createBattlePokemon(p1Meta),
     p2: createBattlePokemon(p2Meta),
-    turn: 0,
+    turn: null, // ✅ MODIFIED: Removed hardcoded "turn: 0" - will be set by speed
     round: 1,
     defending: null,
     actionsThisRound: 0
@@ -824,7 +841,10 @@ function executeTurn() {
   
   const { p1, p2 } = gameState.currentBattle;
   
+  // ✅ MODIFIED: Speed-based turn order at start of each round
   if (gameState.currentBattle.actionsThisRound === 0) {
+    gameState.currentBattle.turn = determineFirstAttacker(p1, p2);
+    // Reset defense for new round
     gameState.currentBattle.defending = null;
     removeDefendVisuals();
   }
@@ -1135,7 +1155,6 @@ function playMissAnimation(defender) {
     dodgeEffect.remove();
   }, 600);
 }
-
 
 // New: Heal animation effect
 function playHealAnimation(pokemon) {
@@ -1497,7 +1516,6 @@ function playHitAnimation(defender) {
   }, 500);
 }
 
-
 // Updated: Defense animations
 function addDefendVisuals(pokemon) {
   const wrapper = pokemon.isPlayer ? UI.player.wrapper : UI.enemy.wrapper;
@@ -1567,6 +1585,22 @@ style.textContent = `
     0% { box-shadow: 0 0 0 rgba(0, 255, 157, 0.8); }
     50% { box-shadow: 0 0 30px rgba(0, 255, 157, 0.4); }
     100% { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); }
+  }
+
+  /* ✅ NEW: Visual indicator for speed advantage */
+  .speed-advantage {
+    animation: speedGlow 2s infinite;
+  }
+
+  @keyframes speedGlow {
+    0%, 100% { 
+      box-shadow: 0 0 10px rgba(0, 196, 255, 0.5); 
+      border-color: var(--info);
+    }
+    50% { 
+      box-shadow: 0 0 25px rgba(0, 196, 255, 0.8); 
+      border-color: #00c4ff;
+    }
   }
 `;
 document.head.appendChild(style);

@@ -3,6 +3,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let TOKEN_DECIMALS = 18;
 
+  // Add at top of marketplace.js after TOKEN_DECIMALS declaration
+async function parsePriceWithCorrectDecimals(price) {
+  // Wait for decimals to load if not yet initialized
+  if (TOKEN_DECIMALS === null) {
+    await loadTokenDecimals();
+  }
+  return ethers.parseUnits(String(price), TOKEN_DECIMALS);
+}
+
+async function formatPriceWithCorrectDecimals(priceRaw) {
+  if (TOKEN_DECIMALS === null) {
+    await loadTokenDecimals();
+  }
+  return ethers.formatUnits(priceRaw, TOKEN_DECIMALS) + ' PKCN';
+}
+
   // ===== State Management =====
   let pendingPurchases = new Set();
   let pendingTransactionHashes = new Set();
@@ -316,17 +332,27 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadTokenDecimals() {
-    try {
-      const provider = await window.wallet.getProvider();
-      const token = new ethers.Contract(window.CONTRACTS.PKCN, window.ABIS.PKCN, provider);
-      const decimalsBN = await token.decimals();
-      TOKEN_DECIMALS = Number(decimalsBN.toString());
-      console.log(`✅ Token decimals loaded: ${TOKEN_DECIMALS}`);
-    } catch (e) {
-      console.warn('Failed to fetch token decimals, defaulting to 18');
-      TOKEN_DECIMALS = 18;
+  try {
+    const provider = await window.wallet.getProvider();
+    const token = new ethers.Contract(window.CONTRACTS.PKCN, window.ABIS.PKCN, provider);
+    const decimalsBN = await token.decimals();
+    TOKEN_DECIMALS = Number(decimalsBN.toString());
+    console.log(`✅ Token decimals loaded: ${TOKEN_DECIMALS}`);
+    
+    // Save to localStorage for emergency fallback
+    localStorage.setItem('pkcn_decimals', TOKEN_DECIMALS.toString());
+  } catch (e) {
+    // Try loading from localStorage first
+    const saved = localStorage.getItem('pkcn_decimals');
+    if (saved) {
+      TOKEN_DECIMALS = parseInt(saved);
+      console.log(`✅ Token decimals loaded from cache: ${TOKEN_DECIMALS}`);
+    } else {
+      console.warn('Failed to fetch token decimals, defaulting to 0');
+      TOKEN_DECIMALS = 0; // ✅ Default to 0 for your token
     }
   }
+}
 
   async function loadGen1And2Pokemon() {
     if (loader) loader.style.display = 'flex';
@@ -2002,15 +2028,19 @@ async function renderPlayerMarketplaceGrid() {
   }
 
   // ===== Initialization =====
-  (async function init() {
-    console.log('🚀 Initializing marketplace...');
-    await cleanupLegacyListings();
-    loadRecentlyPurchased();
-    await loadTypes();
-    await loadTokenDecimals();
-    await loadGen1And2Pokemon();
-    attachHandlers();
-    setupEventListeners();
+(async function init() {
+  console.log('🚀 Initializing marketplace...');
+  await cleanupLegacyListings();
+  loadRecentlyPurchased();
+  await loadTypes();
+  
+  // ✅ FIX: Ensure decimals load BEFORE allowing listings
+  await loadTokenDecimals();
+  console.log(`✅ Token decimals confirmed: ${TOKEN_DECIMALS}`);
+  
+  await loadGen1And2Pokemon();
+  attachHandlers();
+  setupEventListeners();
 
     setTimeout(() => {
       console.log('⏰ Starting sync of past listings...');

@@ -11,18 +11,22 @@ function checkMarketplaceReady() {
 
 // ✅ EMERGENCY FALLBACK: Direct implementation (no external deps)
 async function emergencyListPokemon(tokenId, name, pokemonId, rarity, price) {
-    console.log('🚀 Using emergency direct listing...');
-    
-    const provider = await window.wallet.getProvider();
-    const signer = await window.wallet.getSigner();
-    const sellerAddress = await window.wallet.getAccount();
+  console.log('🚀 Using emergency direct listing...');
+  
+  const provider = await window.wallet.getProvider();
+  const signer = await window.wallet.getSigner();
+  const sellerAddress = await window.wallet.getAccount();
 
-    const nftAddr = window.CONTRACTS.POKEMON_NFT_ADDRESS;
-    const marketplaceAddr = window.CONTRACTS.MARKETPLACE_ADDRESS;
-    
-    // Convert price
-    const decimals = 18; // PKCN standard
-    const priceUnits = ethers.parseUnits(String(price), decimals);
+  const nftAddr = window.CONTRACTS.POKEMON_NFT_ADDRESS;
+  const marketplaceAddr = window.CONTRACTS.MARKETPLACE_ADDRESS;
+  
+  // ✅ FIX: Fetch actual token decimals from contract
+  const token = new ethers.Contract(window.CONTRACTS.PKCN, window.ABIS.PKCN, provider);
+  const decimals = await token.decimals().catch(() => 0); // Default to 0, not 18
+  
+  // Convert price with correct decimals
+  const priceUnits = ethers.parseUnits(String(price), decimals);
+
 
     // Step 1: Approve NFT
     window.txModal.transaction({
@@ -606,6 +610,31 @@ function stopCollectionAutoRefresh() {
         collectionRefreshInterval = null;
     }
 }
+
+// In collection.js, update the DOMContentLoaded handler
+window.addEventListener('DOMContentLoaded', async () => {
+  console.log('📦 Collection page loading...');
+  
+  // Wait for marketplace.js to load decimals
+  if (window.marketplaceLoading) {
+    await window.marketplaceLoading;
+  }
+  
+  if (window.wallet?.getAccount?.()) {
+    await renderCollection();
+    startCollectionAutoRefresh();
+  } else {
+    document.addEventListener('wallet.ready', async () => {
+      console.log('Wallet ready, loading collection...');
+      // Wait for decimals
+      if (window.marketplaceLoading) {
+        await window.marketplaceLoading;
+      }
+      await renderCollection();
+      startCollectionAutoRefresh();
+    });
+  }
+});
 
 // ✅ CORRECTED: Wait for wallet to be ready before rendering
 window.addEventListener('DOMContentLoaded', () => {
