@@ -3,63 +3,376 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PokéChain — Transaction History</title>
+  <title>PokéChain – Transaction History</title>
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="collection-marketplace.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
   <style>
+    :root {
+      --primary: #00ff9d;
+      --secondary: #ffaa00;
+      --accent: #00a8ff;
+      --dark-bg: #1a1a2e;
+      --darker-bg: #000000;
+    }
+
+    body {
+      background: linear-gradient(135deg, var(--dark-bg) 0%, var(--darker-bg) 100%);
+      color: #ffffff;
+      min-height: 100vh;
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    .navbar {
+      z-index: 1000;
+    }
+
+    .small-muted {
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .page-header {
+      text-align: center;
+      padding: 40px 0;
+      background: rgba(0, 0, 0, 0.3);
+      border-bottom: 3px solid var(--primary);
+      margin-bottom: 30px;
+    }
+
+    .page-header h1 {
+      font-size: 2.5em;
+      color: var(--primary);
+      text-shadow: 0 0 20px rgba(0, 255, 157, 0.5);
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+    }
+
+    .container-fluid {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .section-title {
+      color: var(--primary);
+      font-size: 1.5em;
+      font-weight: 800;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid rgba(0, 255, 157, 0.3);
+      font-family: 'Orbitron', sans-serif;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .filter-container {
+      margin-bottom: 30px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
     .filter-btn {
       background: rgba(0, 255, 157, 0.1);
-      border: 1px solid rgba(0, 255, 157, 0.3);
-      color: #00ff9d;
-      padding: 8px 16px;
+      border: 2px solid rgba(0, 255, 157, 0.3);
+      color: var(--primary);
+      padding: 10px 20px;
       border-radius: 8px;
-      margin: 0 4px;
       cursor: pointer;
       transition: all 0.3s ease;
+      font-weight: 700;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.9em;
     }
+
+    .filter-btn:hover {
+      background: rgba(0, 255, 157, 0.2);
+      transform: translateY(-2px);
+    }
+
     .filter-btn.active {
-      background: linear-gradient(135deg, #00ff9d, #00c474);
+      background: linear-gradient(135deg, var(--primary), #00c474);
       color: #000;
-      border-color: #00ff9d;
+      border-color: var(--primary);
+      box-shadow: 0 0 20px rgba(0, 255, 157, 0.3);
     }
-    .tx-table {
-      font-size: 0.85rem;
+
+    /* History Table Styles (matching profile.html) */
+    .history-table {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
-    .tx-table img {
+
+    .history-header {
+      display: grid;
+      grid-template-columns: 120px 200px 120px 140px 140px 140px 140px 100px 100px 100px;
+      background: rgba(0, 255, 157, 0.1);
+      padding: 15px;
+      font-weight: 700;
+      color: var(--primary);
+      border-bottom: 2px solid rgba(0, 255, 157, 0.3);
+      gap: 10px;
+    }
+
+    .history-row {
+      display: grid;
+      grid-template-columns: 120px 200px 120px 140px 140px 140px 140px 100px 100px 100px;
+      padding: 15px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .history-row:hover {
+      background: rgba(0, 255, 157, 0.05);
+    }
+
+    .history-cell {
+      padding: 5px;
+      display: flex;
+      align-items: center;
+      font-size: 0.9em;
+      overflow: hidden;
+    }
+
+    .pokemon-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .pokemon-avatar {
       width: 40px;
       height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .pokemon-avatar img {
+      width: 100%;
+      height: 100%;
       object-fit: contain;
     }
-    .status-badge {
-      padding: 4px 8px;
-      border-radius: 6px;
-      font-size: 0.7rem;
-      font-weight: 700;
+
+    .pokemon-details {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
-    .status-success { background: rgba(0, 255, 157, 0.2); color: #00ff9d; }
-    .status-failed { background: rgba(255, 77, 77, 0.2); color: #ff4d4d; }
-    .status-pending { background: rgba(255, 215, 0, 0.2); color: #ffd700; }
-    
-    /* ✅ NEW: Highlight NFT ID column */
+
+    .pokemon-name {
+      font-weight: 700;
+      color: white;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pokemon-id {
+      font-size: 0.75em;
+      color: #aaa;
+      white-space: nowrap;
+    }
+
     .nft-id-cell {
       font-weight: 700;
-      color: #00ff9d;
+      color: var(--primary);
+      font-family: monospace;
+      font-size: 0.85em;
+      white-space: nowrap;
     }
-    
-    /* ✅ NEW: Type badges */
+
+    .address-cell {
+      font-family: monospace;
+      color: #aaa;
+      font-size: 0.8em;
+      white-space: nowrap;
+    }
+
+    /* Type badges */
     .type-badge {
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 0.6rem;
+      padding: 4px 10px;
+      border-radius: 15px;
+      font-size: 0.7em;
       font-weight: 700;
       text-transform: uppercase;
+      white-space: nowrap;
     }
-    .type-list { background: rgba(0, 157, 255, 0.2); color: #009dff; }
-    .type-delist { background: rgba(255, 157, 0, 0.2); color: #ff9d00; }
-    .type-purchase { background: rgba(0, 255, 157, 0.2); color: #00ff9d; }
-    .type-marketplace_purchase { background: rgba(157, 0, 255, 0.2); color: #9d00ff; }
+
+    .type-purchase {
+      background: rgba(0, 255, 157, 0.2);
+      color: var(--primary);
+    }
+
+    .type-marketplace_purchase {
+      background: rgba(157, 0, 255, 0.2);
+      color: #9d00ff;
+    }
+
+    .type-list {
+      background: rgba(0, 168, 255, 0.2);
+      color: var(--accent);
+    }
+
+    .type-delist {
+      background: rgba(255, 170, 0, 0.2);
+      color: var(--secondary);
+    }
+
+    /* Status badges */
+    .status-badge {
+      padding: 4px 10px;
+      border-radius: 15px;
+      font-size: 0.75em;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status-success {
+      background: rgba(0, 255, 157, 0.2);
+      color: var(--primary);
+    }
+
+    .status-failed {
+      background: rgba(255, 68, 68, 0.2);
+      color: #ff4444;
+    }
+
+    .status-pending {
+      background: rgba(255, 215, 0, 0.2);
+      color: #ffd700;
+    }
+
+    .amount-cell {
+      font-weight: 700;
+      color: var(--primary);
+      white-space: nowrap;
+    }
+
+    .time-cell {
+      color: #aaa;
+      font-size: 0.85em;
+      white-space: nowrap;
+    }
+
+    .action-cell {
+      display: flex;
+      gap: 5px;
+      justify-content: center;
+    }
+
+    .btn-view {
+      background: linear-gradient(135deg, rgba(0, 168, 255, 0.2), rgba(0, 168, 255, 0.1));
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 0.75em;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.3s ease;
+    }
+
+    .btn-view:hover {
+      background: linear-gradient(135deg, rgba(0, 168, 255, 0.3), rgba(0, 168, 255, 0.2));
+      transform: translateY(-2px);
+      color: var(--accent);
+    }
+
+    .no-data {
+      text-align: center;
+      padding: 60px 20px;
+      color: #666;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .no-data i {
+      font-size: 3em;
+      margin-bottom: 20px;
+      color: rgba(0, 255, 157, 0.3);
+    }
+
+    /* Clear button */
+    .btn-clear {
+      background: linear-gradient(180deg, rgba(255, 68, 68, 0.3), rgba(200, 50, 50, 0.3));
+      border: 2px solid #ff4444;
+      color: #ff4444;
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-family: 'Orbitron', sans-serif;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-size: 0.9em;
+    }
+
+    .btn-clear:hover {
+      background: linear-gradient(180deg, rgba(255, 68, 68, 0.4), rgba(200, 50, 50, 0.4));
+      transform: scale(1.05);
+    }
+
+    /* Responsive */
+    @media (max-width: 1200px) {
+      .history-header,
+      .history-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      
+      .history-header {
+        display: none;
+      }
+      
+      .history-cell {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      
+      .history-cell::before {
+        content: attr(data-label);
+        font-weight: 700;
+        color: var(--primary);
+        margin-right: 10px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .page-header h1 {
+        font-size: 2em;
+      }
+      
+      .section-title {
+        font-size: 1.2em;
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      
+      .filter-container {
+        gap: 8px;
+      }
+      
+      .filter-btn {
+        padding: 8px 16px;
+        font-size: 0.8em;
+      }
+    }
   </style>
 </head>
 
@@ -76,7 +389,6 @@
         <li class="nav-item"><a class="nav-link" href="collection.html">Collection</a></li>
         <li class="nav-item"><a class="nav-link active" href="transaction-history.html">Transactions</a></li>
         <li class="nav-item"><a class="nav-link" href="profile.html">Profile</a></li>
-
         <li class="nav-item"><a class="nav-link" href="tournament.html">Tournament</a></li>
         <li class="nav-item"><div id="pctBalance" class="small-muted px-2">—</div></li>
         <li class="nav-item"><button id="walletDisplay" class="btn btn-sm btn-outline-light">Connect</button></li>
@@ -84,41 +396,45 @@
     </div>
   </nav>
 
-  <main class="container-fluid px-4 py-5">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <h1 class="h2 mb-0">Transaction History</h1>
-      <button id="clearHistory" class="btn btn-sm btn-outline-danger">Clear History</button>
+  <div class="page-header">
+    <h1><i class="bi bi-clock-history"></i> Transaction History</h1>
+  </div>
+
+  <main class="container-fluid px-4 py-4">
+    <div class="section-title">
+      <span><i class="bi bi-list-ul"></i> All Transactions</span>
+      <button id="clearHistory" class="btn-clear">
+        <i class="bi bi-trash"></i> Clear History
+      </button>
     </div>
 
-    <div class="mb-4">
+    <div class="filter-container">
       <button class="filter-btn active" data-filter="all">All</button>
       <button class="filter-btn" data-filter="buy">Buy</button>
-      <button class="filter-btn" data-filter="list">List</button> <!-- ✅ NEW -->
+      <button class="filter-btn" data-filter="list">List</button>
       <button class="filter-btn" data-filter="delist">Delist</button>
       <button class="filter-btn" data-filter="success">Success</button>
       <button class="filter-btn" data-filter="failed">Failed</button>
     </div>
 
-    <div class="table-responsive">
-      <table class="table tx-table">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Pokémon</th>
-            <th>Amount</th>
-            <th>Gas Fee</th>
-            <th>NFT ID</th> <!-- ✅ Ensure this column exists -->
-            <th>From</th>
-            <th>To</th>
-            <th>Status</th>
-            <th>Time</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="txTableBody">
-          <tr><td colspan="10" class="text-center py-5">Loading transaction history...</td></tr>
-        </tbody>
-      </table>
+    <div class="history-table">
+      <div class="history-header">
+        <div class="history-cell">Type</div>
+        <div class="history-cell">Pokémon</div>
+        <div class="history-cell">Amount</div>
+        <div class="history-cell">Gas Fee</div>
+        <div class="history-cell">NFT ID</div>
+        <div class="history-cell">From</div>
+        <div class="history-cell">To</div>
+        <div class="history-cell">Status</div>
+        <div class="history-cell">Time</div>
+      </div>
+      <div id="txTableBody">
+        <div class="no-data">
+          <i class="bi bi-hourglass-split"></i>
+          <p>Loading transaction history...</p>
+        </div>
+      </div>
     </div>
   </main>
 
@@ -158,7 +474,7 @@
       return 'Just now';
     }
 
-    // ===== UPDATED Transaction History Page Class =====
+    // ===== Transaction History Page Class =====
     class TxHistoryPage {
       constructor() {
         this.key = 'pokechain_tx_history_v2';
@@ -180,55 +496,76 @@
         const tbody = document.getElementById('txTableBody');
         
         if (filtered.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="10" class="text-center py-5">No transactions found</td></tr>';
+          tbody.innerHTML = `
+            <div class="no-data">
+              <i class="bi bi-inbox"></i>
+              <p>No transactions found</p>
+            </div>
+          `;
           return;
         }
 
         tbody.innerHTML = filtered.map(tx => `
-          <tr>
-            <td>${this.getTypeBadge(tx.type)}</td>
-            <td>
-              <div class="d-flex align-items-center gap-2">
-                ${tx.details?.image ? `<img src="${tx.details.image}" alt="${tx.details.pokemonName || 'Unknown'}" class="rounded" />` : ''}
-                <div>
-                  <div>${tx.details.pokemonName || 'Unknown'}</div>
-                  <small class="text-muted">#${tx.details.pokemonId || '?'}</small>
+          <div class="history-row">
+            <div class="history-cell" data-label="Type">
+              ${this.getTypeBadge(tx.type)}
+            </div>
+            <div class="history-cell" data-label="Pokémon">
+              <div class="pokemon-info">
+                ${tx.details?.image ? `
+                  <div class="pokemon-avatar">
+                    <img src="${tx.details.image}" alt="${tx.details.pokemonName || 'Unknown'}" />
+                  </div>
+                ` : ''}
+                <div class="pokemon-details">
+                  <div class="pokemon-name">${tx.details?.pokemonName || 'Unknown'}</div>
+                  <div class="pokemon-id">#${tx.details?.pokemonId || '?'}</div>
                 </div>
               </div>
-            </td>
-            <td>${tx.tokenAmount || '-'}</td>
-            <td>${tx.gasFee || '-'}</td>
-            <td class="nft-id-cell">${tx.nftId || '-'}</td> <!-- ✅ ENSURE NFT ID DISPLAY -->
-            <td>${tx.fromAddress ? shortAddress(tx.fromAddress) : '-'}</td>
-            <td>${tx.toAddress ? shortAddress(tx.toAddress) : '-'}</td>
-            <td><span class="status-badge status-${tx.status}">${tx.status}</span></td>
-            <td>${formatTime(tx.timestamp)}</td>
-            <td>
-              ${tx.hash ? `<a href="${getExplorerLink(tx.hash)}" target="_blank" class="btn btn-sm btn-outline-primary">View</a>` : ''}
-            </td>
-          </tr>
+            </div>
+            <div class="history-cell amount-cell" data-label="Amount">
+              ${tx.tokenAmount || '-'}
+            </div>
+            <div class="history-cell" data-label="Gas Fee">
+              ${tx.gasFee || '-'}
+            </div>
+            <div class="history-cell nft-id-cell" data-label="NFT ID">
+              ${tx.nftId || '-'}
+            </div>
+            <div class="history-cell address-cell" data-label="From">
+              ${tx.fromAddress ? shortAddress(tx.fromAddress) : '-'}
+            </div>
+            <div class="history-cell address-cell" data-label="To">
+              ${tx.toAddress ? shortAddress(tx.toAddress) : '-'}
+            </div>
+            <div class="history-cell" data-label="Status">
+              <span class="status-badge status-${tx.status}">${tx.status}</span>
+            </div>
+            <div class="history-cell time-cell" data-label="Time">
+              ${formatTime(tx.timestamp)}
+            </div>
+            
+          </div>
         `).join('');
       }
 
-      // ✅ UPDATED: Include 'list' type in filtering
       filter(txs, type) {
         if (type === 'all') return txs;
         return txs.filter(tx => 
           type === 'buy' ? ['purchase', 'marketplace_purchase'].includes(tx.type) :
           type === 'sell' ? tx.type === 'marketplace_purchase' :
-          type === 'list' ? tx.type === 'list' : // ✅ NEW
+          type === 'list' ? tx.type === 'list' :
           type === 'delist' ? tx.type === 'delist' :
           tx.status === type
         );
       }
 
-      // ✅ UPDATED: Add 'list' type badge
       getTypeBadge(type) {
         const badges = {
           purchase: '<span class="type-badge type-purchase">Purchase</span>',
           marketplace_purchase: '<span class="type-badge type-marketplace_purchase">Marketplace</span>',
           delist: '<span class="type-badge type-delist">Delist</span>',
-          list: '<span class="type-badge type-list">List</span>' // ✅ NEW
+          list: '<span class="type-badge type-list">List</span>'
         };
         return badges[type] || `<span class="type-badge">${type}</span>`;
       }
@@ -246,13 +583,14 @@
         });
 
         document.getElementById('clearHistory')?.addEventListener('click', async () => {
-          const confirmed = await window.txModal?.confirm({
+          const confirmed = window.txModal?.confirm ? await window.txModal.confirm({
             title: 'Clear History',
             message: 'Are you sure you want to clear all transaction history?',
             confirmText: 'Clear',
             cancelText: 'Cancel',
             dangerous: true
-          });
+          }) : confirm('Are you sure you want to clear all transaction history?');
+          
           if (confirmed) {
             localStorage.removeItem(this.key);
             this.render(this.currentFilter);
@@ -261,7 +599,6 @@
       }
     }
 
-    // ✅ ENSURE txHistory is available globally
     window.txHistoryPage = new TxHistoryPage();
   </script>
 </body>
