@@ -173,6 +173,104 @@ function getAbilityProperties(abilityName, pokemonTypes) {
 }
 
 // ===================================================================
+// BATTLE HISTORY STORAGE
+// ===================================================================
+
+/**
+ * Saves the current tournament battle to localStorage history
+ */
+function saveBattleHistory(battleData) {
+  try {
+    // Load existing history
+    let history = JSON.parse(localStorage.getItem('battleHistory') || '[]');
+    
+    // Create battle record
+    const record = {
+      tournamentId: gameState.tournamentId || `local_${Date.now()}`,
+      timestamp: Date.now(),
+      playerPokemon: {
+        name: battleData.p1.isPlayer ? battleData.p1.name : battleData.p2.name,
+        id: battleData.p1.isPlayer ? battleData.p1.id : battleData.p2.id,
+        tokenId: battleData.p1.isPlayer ? battleData.p1.tokenId : battleData.p2.tokenId,
+        rarity: battleData.p1.isPlayer ? battleData.p1.rarity : battleData.p2.rarity
+      },
+      opponent: {
+        name: battleData.p1.isPlayer ? battleData.p2.name : battleData.p1.name,
+        id: battleData.p1.isPlayer ? battleData.p2.id : battleData.p1.id,
+        rarity: battleData.p1.isPlayer ? battleData.p2.rarity : battleData.p1.rarity
+      },
+      rounds: battleData.round,
+      result: battleData.winner?.isPlayer ? 'win' : 'loss',
+      winner: battleData.winner?.name || 'Unknown',
+      difficulty: gameState.difficulty,
+      matchIndex: gameState.matchIndex,
+      totalMatches: gameState.matchups.length,
+      defending: battleData.defending ? {
+        player: battleData.defending.name,
+        outcome: calculateDefenseOutcome(battleData.defending)
+      } : null
+    };
+    
+    history.unshift(record); // Add to beginning (newest first)
+    
+    // Keep only last 100 battles to prevent storage bloat
+    if (history.length > 100) {
+      history = history.slice(0, 100);
+    }
+    
+    localStorage.setItem('battleHistory', JSON.stringify(history));
+    console.log('✅ Battle history saved:', record);
+    
+  } catch (error) {
+    console.error('❌ Failed to save battle history:', error);
+  }
+}
+
+/**
+ * Saves complete tournament summary
+ */
+function saveTournamentSummary(finalRank, totalReward) {
+  try {
+    const player = gameState.participants.find(p => p.isPlayer);
+    if (!player) return;
+    
+    const summary = {
+      tournamentId: gameState.tournamentId || `tournament_${Date.now()}`,
+      timestamp: Date.now(),
+      playerPokemon: {
+        name: player.name,
+        id: player.id,
+        rarity: player.rarity,
+        tokenId: player.tokenId || 0
+      },
+      difficulty: gameState.difficulty,
+      opponentCount: gameState.participants.length - 1,
+      wins: player.wins,
+      losses: player.losses,
+      finalRank: finalRank,
+      totalReward: totalReward,
+      matches: gameState.matchIndex,
+      success: totalReward > 0
+    };
+    
+    // Load existing tournament history
+    let tournamentHistory = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
+    tournamentHistory.unshift(summary);
+    
+    // Keep only last 50 tournaments
+    if (tournamentHistory.length > 50) {
+      tournamentHistory = tournamentHistory.slice(0, 50);
+    }
+    
+    localStorage.setItem('tournamentHistory', JSON.stringify(tournamentHistory));
+    console.log('✅ Tournament summary saved:', summary);
+    
+  } catch (error) {
+    console.error('❌ Failed to save tournament summary:', error);
+  }
+}
+
+// ===================================================================
 // INITIALIZATION (REMOVED MATCH DELAYS)
 // ===================================================================
 
@@ -344,6 +442,9 @@ async function endTournament() {
     // ✅ Even if claim fails, show the correct calculated reward
     showTournamentResult(rank === 1, rank, totalReward, false, gameState.tournamentId, errorMessage);
   }
+  
+  // Save tournament summary after all processing
+  saveTournamentSummary(rank, totalReward);
 }
 
 // async function getContractRewardCalculation(tournamentId) {
@@ -550,6 +651,7 @@ async function loadPokemonMetadata(pokemonData, isPlayer) {
   return {
     id: pokemon.id,
     name: pokemonData.name,
+    tokenId: pokemonData.tokenId || 0, // Add tokenId support
     types: pokemon.types.map(t => t.type.name),
     abilities,
     stats,
@@ -711,6 +813,7 @@ function createBattlePokemon(metadata) {
     wins: metadata.wins,
     losses: metadata.losses,
     rarity: metadata.rarity,
+    tokenId: metadata.tokenId || 0,
     battleId: `${metadata.id}_${Date.now()}_${Math.random()}`
   };
   
@@ -882,8 +985,8 @@ function showHpBars() {
     const { p1, p2 } = gameState.currentBattle;
     const player = p1.isPlayer ? p1 : p2;
     const enemy = p1.isPlayer ? p2 : p1;
-    updateHpBar(player, true);
-    updateHpBar(enemy, true);
+    updateHpBar(player);
+    updateHpBar(enemy);
   }
 }
 
@@ -1250,6 +1353,13 @@ function getDefenseMessage(outcome) {
 }
 
 async function handleFaint(faintedPokemon) {
+  // Save battle before processing faint
+  if (gameState.currentBattle) {
+    const { p1, p2 } = gameState.currentBattle;
+    gameState.currentBattle.winner = faintedPokemon === p1 ? p2 : p1;
+    saveBattleHistory(gameState.currentBattle);
+  }
+  
   gameState.battleActive = false;
   log('faint', `💀 ${faintedPokemon.name} fainted!`);
   
