@@ -78,6 +78,8 @@
     _meta = null;
     updateNavbarDisplay();
     await updateBalanceDisplayIfNeeded();
+      // ✅ ADD THIS LINE HERE
+    await grantNewUserBonus();
     return _account;
   }
 
@@ -276,5 +278,62 @@
       }
     }, 500);
   });
+  
+  // ✅ NEW: Grant 500 PKCN to new users
+async function grantNewUserBonus() {
+  try {
+    // Check if already granted (localStorage flag)
+    const hasReceived = localStorage.getItem(`pkcn_bonus_${_account}`);
+    if (hasReceived) return false;
 
+    // Check current balance
+    const balanceStr = await getTokenBalance(_account);
+    const balance = parseFloat(balanceStr);
+
+    // Only grant if balance is exactly 0 (new user)
+    if (balance > 0) {
+      localStorage.setItem(`pkcn_bonus_${_account}`, 'skipped');
+      return false;
+    }
+
+    // Show notification
+    const notif = document.createElement('div');
+    notif.id = 'bonus-notification';
+    notif.style.cssText = `
+      position: fixed; top: 20px; right: 20px; 
+      background: linear-gradient(135deg, #00ff9d, #00c474);
+      color: #000; padding: 15px; border-radius: 10px;
+      font-weight: 700; z-index: 9999; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    `;
+    notif.textContent = '🎉 Welcome to PokéChain! Granting 500 PKCN bonus...';
+    document.body.appendChild(notif);
+
+    // Attempt to mint 500 PKCN
+    const contract = await getTokenContract(true);
+    const tx = await contract.mint(_account, ethers.parseEther('500'));
+    await tx.wait();
+
+    // Mark as granted
+    localStorage.setItem(`pkcn_bonus_${_account}`, 'granted');
+
+    // Update balance display
+    await updateBalanceDisplayIfNeeded();
+
+    notif.textContent = '✅ Bonus granted! You received 500 PKCN!';
+    setTimeout(() => notif.remove(), 4000);
+
+    return true;
+
+  } catch (error) {
+    console.error('Bonus grant failed:', error);
+
+    // Remove notification
+    const notif = document.getElementById('bonus-notification');
+    if (notif) notif.remove();
+
+    // Mark as failed to prevent repeated attempts
+    localStorage.setItem(`pkcn_bonus_${_account}`, 'failed');
+    return false;
+  }
+}
 })();
