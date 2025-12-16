@@ -227,13 +227,125 @@ function saveBattleHistory(battleData) {
 }
 
 /**
- * Saves complete tournament summary
+ * ✅ SAVES UNCLAIMED REWARD when MetaMask transaction fails/cancels
+ * Stores data in localStorage so user can claim later from profile
+ */
+function saveUnclaimedReward(tournamentId, rewardAmount, playerWins, totalOpponents, difficulty) {
+  console.log('=== Saving Unclaimed Reward (CANCELED TRANSACTION) ===');
+  console.log('Tournament ID:', tournamentId);
+  console.log('Reward:', rewardAmount);
+  console.log('Wins:', playerWins);
+  console.log('Opponents:', totalOpponents);
+  console.log('Difficulty:', difficulty);
+
+  try {
+    // ✅ FIX 1: Only save if it's a valid blockchain tournament ID (not local)
+    if (!tournamentId || tournamentId.startsWith('local_')) {
+      console.log('⚠️ Skipping - local tournament ID');
+      return;
+    }
+
+    // ✅ FIX 2: Validate all required parameters
+    if (!rewardAmount || rewardAmount <= 0) {
+      console.log('⚠️ Skipping - invalid reward amount');
+      return;
+    }
+
+    if (typeof playerWins === 'undefined' || typeof totalOpponents === 'undefined') {
+      console.log('⚠️ Skipping - missing wins/opponents data');
+      return;
+    }
+
+    // ✅ FIX 3: Load existing unclaimed rewards with proper error handling
+    let unclaimed = [];
+    try {
+      const rawData = localStorage.getItem('unclaimedRewardsLocal');
+      if (rawData) {
+        unclaimed = JSON.parse(rawData);
+        // Ensure it's an array
+        if (!Array.isArray(unclaimed)) {
+          console.warn('⚠️ Invalid data format, resetting...');
+          unclaimed = [];
+        }
+      }
+    } catch (parseError) {
+      console.error('❌ Error parsing existing data:', parseError);
+      unclaimed = [];
+    }
+
+    console.log('📦 Loaded existing unclaimed rewards:', unclaimed.length);
+
+    // ✅ FIX 4: Check if already exists to avoid duplicates
+    const existingIndex = unclaimed.findIndex(u => u.tournamentId === tournamentId);
+    if (existingIndex !== -1) {
+      console.log('⚠️ Tournament already exists in unclaimed rewards, updating...');
+      // Update existing entry instead of duplicating
+      unclaimed[existingIndex] = {
+        tournamentId,
+        reward: rewardAmount,
+        timestamp: Date.now(),
+        difficulty: difficulty || 'normal',
+        wins: playerWins,
+        opponentCount: totalOpponents
+      };
+    } else {
+      // ✅ FIX 5: Create new reward entry with all required fields
+      const newReward = {
+        tournamentId,
+        reward: rewardAmount,
+        timestamp: Date.now(),
+        difficulty: difficulty || 'normal',
+        wins: playerWins,
+        opponentCount: totalOpponents
+      };
+
+      console.log('➕ Adding new unclaimed reward:', newReward);
+      unclaimed.push(newReward);
+    }
+
+    // ✅ FIX 6: Save with proper error handling
+    try {
+      localStorage.setItem('unclaimedRewardsLocal', JSON.stringify(unclaimed));
+      console.log('✅ SUCCESSFULLY SAVED TO localStorage');
+    } catch (saveError) {
+      console.error('❌ CRITICAL ERROR saving to localStorage:', saveError);
+      // Check if it's a quota error
+      if (saveError.name === 'QuotaExceededError') {
+        console.error('💾 Storage quota exceeded! Clearing old entries...');
+        // Keep only last 10 entries
+        unclaimed = unclaimed.slice(-10);
+        localStorage.setItem('unclaimedRewardsLocal', JSON.stringify(unclaimed));
+      }
+      throw saveError;
+    }
+    
+    // ✅ FIX 7: Verify save was successful
+    const verify = JSON.parse(localStorage.getItem('unclaimedRewardsLocal'));
+    console.log('🔍 Verified saved data:', verify);
+    
+    const foundEntry = verify.find(u => u.tournamentId === tournamentId);
+    if (foundEntry) {
+      console.log('✅ Verification successful:', foundEntry);
+    } else {
+      console.error('❌ Verification failed! Entry not found after save');
+    }
+
+  } catch (error) {
+    console.error('❌ CRITICAL ERROR in saveUnclaimedReward:', error);
+    console.error('Error details:', error.message);
+    console.error('Stack trace:', error.stack);
+  }
+}
+
+/**
+ * ✅ SAVES TOURNAMENT SUMMARY to localStorage history
+ * This is called after every tournament completes
  */
 function saveTournamentSummary(finalRank, totalReward) {
   try {
     const player = gameState.participants.find(p => p.isPlayer);
     if (!player) return;
-    
+
     const summary = {
       tournamentId: gameState.tournamentId || `tournament_${Date.now()}`,
       timestamp: Date.now(),
@@ -252,24 +364,27 @@ function saveTournamentSummary(finalRank, totalReward) {
       matches: gameState.matchIndex,
       success: totalReward > 0
     };
-    
+
     // Load existing tournament history
     let tournamentHistory = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
     tournamentHistory.unshift(summary);
-    
+
     // Keep only last 50 tournaments
     if (tournamentHistory.length > 50) {
       tournamentHistory = tournamentHistory.slice(0, 50);
     }
-    
+
     localStorage.setItem('tournamentHistory', JSON.stringify(tournamentHistory));
     console.log('✅ Tournament summary saved:', summary);
-    
+
   } catch (error) {
     console.error('❌ Failed to save tournament summary:', error);
   }
 }
-
+/**
+ * Saves tournament summary to localStorage
+ * This is called after every tournament completes
+ */
 // ===================================================================
 // INITIALIZATION (REMOVED MATCH DELAYS)
 // ===================================================================
@@ -352,22 +467,40 @@ async function endTournament() {
   const sorted = [...gameState.participants].sort((a, b) => b.wins - a.wins);
   const player = sorted.find(p => p.isPlayer);
   const rank = sorted.indexOf(player) + 1;
-
-  // ✅ FIX: Calculate reward LOCALLY using Solidity-matching formula
-  const rewards = calculateRewards();
-  const totalReward = rewards.total; // This will be the accurate amount (e.g., 123)
   
-  console.log(`💰 Calculated reward: ${totalReward} PKCN`); // Should log: 123
+  // Calculate total player matches
+  const totalPlayerMatches = gameState.participants.length - 1;
+
+  // ✅ USE EXISTING calculateRewards() from battle.js
+  const rewards = calculateRewards();
+  const totalReward = rewards.total;
+  
+  console.log('💰 Reward Breakdown:', {
+    base: rewards.base,
+    winBonus: rewards.wins,
+    perfectBonus: rewards.perfect,
+    total: rewards.total,
+    difficulty: gameState.difficulty,
+    playerWins: player.wins,
+    totalMatches: totalPlayerMatches
+  });
+  
+  console.log(`💰 Calculated reward: ${totalReward} PKCN`);
 
   UI.resultTitle.textContent = 'Processing Tournament...';
   UI.resultMessage.textContent = 'Submitting results to blockchain...';
   UI.resultScreen.classList.remove('hidden');
 
+  // ✅ FIX: Save tournament summary FIRST (before blockchain operations)
+  saveTournamentSummary(rank, totalReward);
+
   try {
+    // ✅ FIX: Validate tournament ID
     if (!gameState.tournamentId) {
       throw new Error('No tournament ID found. Cannot save results to blockchain.');
     }
 
+    // ✅ FIX: Validate wallet connection
     if (!window.wallet || !window.wallet.getAccount || !window.wallet.getAccount()) {
       throw new Error('Wallet not connected. Please connect your wallet to claim rewards.');
     }
@@ -381,7 +514,6 @@ async function endTournament() {
       signer
     );
 
-    const totalPlayerMatches = gameState.participants.length - 1;
     const isPerfect = player.wins === totalPlayerMatches;
 
     console.log(`✅ Completing tournament with ${player.wins} wins (Perfect: ${isPerfect})`);
@@ -405,10 +537,10 @@ async function endTournament() {
     console.log('✅ Reward claimed successfully');
 
     // Update tournament history
-    const history = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
+    const history = JSON.parse(localStorage.getItem('battleHistory') || '[]');
     if (!history.includes(gameState.tournamentId)) {
       history.push(gameState.tournamentId);
-      localStorage.setItem('tournamentHistory', JSON.stringify(history));
+      localStorage.setItem('battleHistory', JSON.stringify(history));
     }
 
     localStorage.removeItem('currentTournamentId');
@@ -416,36 +548,59 @@ async function endTournament() {
 
     await updateBalanceDisplay();
 
-    // ✅ Use the locally calculated reward
     showTournamentResult(rank === 1, rank, totalReward, true, gameState.tournamentId);
 
   } catch (error) {
     console.error('❌ Failed to claim rewards:', error);
     
     let errorMessage = 'Transaction failed. ';
-    if (error.message.includes('user rejected')) {
-      errorMessage = 'Transaction rejected. Please approve the transaction to claim rewards.';
+    let shouldSaveUnclaimed = true;
+    
+    // ✅ FIX: Better error detection
+    if (error.message.includes('user rejected') || error.code === 4001 || error.code === 'ACTION_REJECTED') {
+      errorMessage = '⚠️ Transaction rejected. Your progress has been saved. You can claim rewards later from your profile.';
+      shouldSaveUnclaimed = true;
     } else if (error.message.includes('already claimed')) {
       errorMessage = 'Rewards already claimed. Check your PKCN balance.';
+      shouldSaveUnclaimed = false;
     } else if (error.message.includes('Tournament not complete')) {
-      errorMessage = 'Tournament not completed on-chain yet. Please try again later.';
+      errorMessage = 'Tournament not completed on-chain yet. Your progress has been saved.';
+      shouldSaveUnclaimed = true;
     } else if (error.message.includes('No tournament ID')) {
       errorMessage = 'No tournament ID found. Your results are saved locally but not on blockchain.';
+      shouldSaveUnclaimed = false;
     } else if (error.message.includes('Wallet not connected')) {
-      errorMessage = 'Wallet not connected. Connect your wallet to claim rewards.';
-    } else if (error.message.includes('Tournament contract not configured')) {
-      errorMessage = 'Tournament contract not configured. Please check config.js.';
+      errorMessage = 'Wallet not connected. Your progress has been saved.';
+      shouldSaveUnclaimed = true;
     } else {
       errorMessage += error.message.substring(0, 100);
+      shouldSaveUnclaimed = true;
     }
     
-    // ✅ Even if claim fails, show the correct calculated reward
     showTournamentResult(rank === 1, rank, totalReward, false, gameState.tournamentId, errorMessage);
+    
+    // ✅ FIX: Only save as unclaimed if appropriate and with ALL required data
+    if (shouldSaveUnclaimed && gameState.tournamentId && !gameState.tournamentId.startsWith('local_')) {
+      console.log('💾 Saving as unclaimed reward with details:', {
+        tournamentId: gameState.tournamentId,
+        totalReward: totalReward,
+        playerWins: player.wins,
+        totalMatches: totalPlayerMatches,
+        difficulty: gameState.difficulty,
+        rewardBreakdown: rewards
+      });
+      
+      saveUnclaimedReward(
+        gameState.tournamentId, 
+        totalReward, 
+        player.wins, 
+        totalPlayerMatches, 
+        gameState.difficulty || 'normal'
+      );
+    }
   }
-  
-  // Save tournament summary after all processing
-  saveTournamentSummary(rank, totalReward);
 }
+
 
 // async function getContractRewardCalculation(tournamentId) {
 //   try {

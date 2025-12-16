@@ -144,7 +144,7 @@
         }
 
         .reward-amount {
-            font-size: 1.8em;
+            font-size: 16px;
             color: var(--secondary);
             font-weight: bold;
             font-family: 'Orbitron', sans-serif;
@@ -544,499 +544,841 @@
     </script>
 
     <!-- Profile Script -->
+    <!-- Profile Script -->
     <script>
-        // Configuration
-        const CONFIG = {
-            TOURNAMENT_CONTRACT: window.CONTRACTS ? window.CONTRACTS.TOURNAMENT : "0xE1B32A36cfEf94145fAC1bEDDAD5B01D5eCd2457",
-            PKCN_CONTRACT: window.CONTRACTS ? window.CONTRACTS.PKCN : "0x8D38B8F5C1b7ed7f13BF5c46be31272ffD2AE6Ce",
-            POKEMON_NFT: window.CONTRACTS ? window.CONTRACTS.POKEMON_NFT : "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B"
-        };
+    // Configuration
+    const CONFIG = {
+        TOURNAMENT_CONTRACT: window.CONTRACTS ? window.CONTRACTS.TOURNAMENT : "0xE1B32A36cfEf94145fAC1bEDDAD5B01D5eCd2457",
+        PKCN_CONTRACT: window.CONTRACTS ? window.CONTRACTS.PKCN : "0x8D38B8F5C1b7ed7f13BF5c46be31272ffD2AE6Ce",
+        POKEMON_NFT: window.CONTRACTS ? window.CONTRACTS.POKEMON_NFT : "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B"
+    };
 
-        let tournamentContract;
-        let pkcnContract;
-        let nftContract;
-        let signer;
-        let provider;
-        let currentAccount = null;
-        let isConnected = false;
+    let tournamentContract;
+    let pkcnContract;
+    let nftContract;
+    let signer;
+    let provider;
+    let currentAccount = null;
+    let isConnected = false;
+    let refreshInterval;
 
-        // Tournament difficulty mapping
-        const DIFFICULTY_LABELS = {
-            "easy": "Easy",
-            "normal": "Normal",
-            "hard": "Hard",
-            "insane": "Insane"
-        };
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', async function() {
-            await initProfile();
+    // Tournament difficulty mapping
+    const DIFFICULTY_LABELS = {
+        "easy": "Easy",
+        "normal": "Normal",
+        "hard": "Hard",
+        "insane": "Insane"
+    };
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', async function() {
+        console.log('Profile page loaded');
+        await initProfile();
+    });
+
+    function startPeriodicRefresh() {
+    // Clear any existing interval
+    if (refreshInterval) clearInterval(refreshInterval);
+    
+    // Refresh every 30 seconds when on profile page
+    refreshInterval = setInterval(async () => {
+        if (currentAccount && isConnected) {
+            console.log('Periodic refresh of profile data');
+            await loadUnclaimedRewards();
+            await updateBalance();
+        }
+    }, 30000); // 30 seconds
+}
+
+    function cleanupLocalData() {
+    try {
+        // Clean unclaimedRewardsLocal (older than 24 hours)
+        let unclaimed = JSON.parse(localStorage.getItem('unclaimedRewardsLocal') || '[]');
+        const now = Date.now();
+        const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+        
+        const freshUnclaimed = unclaimed.filter(u => {
+            const age = now - (u.timestamp || 0);
+            return age < maxAge;
         });
+        
+        if (freshUnclaimed.length !== unclaimed.length) {
+            localStorage.setItem('unclaimedRewardsLocal', JSON.stringify(freshUnclaimed));
+            console.log(`Cleaned up ${unclaimed.length - freshUnclaimed.length} expired unclaimed rewards`);
+        }
+        
+        // Clean old battleHistory (older than 7 days)
+        let battleHistory = JSON.parse(localStorage.getItem('battleHistory') || '[]');
+        const weekAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+        
+        const freshBattleHistory = battleHistory.filter(b => {
+            const age = now - (b.timestamp || 0);
+            return age < weekAge;
+        });
+        
+        if (freshBattleHistory.length !== battleHistory.length) {
+            localStorage.setItem('battleHistory', JSON.stringify(freshBattleHistory));
+            console.log(`Cleaned up ${battleHistory.length - freshBattleHistory.length} old battle records`);
+        }
+        
+    } catch (error) {
+        console.error('Error cleaning up local data:', error);
+    }
+}
 
-        // Initialize profile
-        async function initProfile() {
-            showLoading(true);
+    // Initialize profile
+    async function initProfile() {
+        showLoading(true);
+        
+        try {
+            // Check if MetaMask is installed
+            if (!window.ethereum) {
+                showError("MetaMask is not installed. Please install MetaMask to use this dApp.");
+                showLoading(false);
+                return;
+            }
+
+            // Check if wallet is already connected globally (from other pages)
+            if (window.wallet && window.wallet.isConnected) {
+                console.log("Using global wallet connection");
+                currentAccount = window.wallet.account;
+                isConnected = true;
+                await connectProfile();
+                return;
+            }
+
+            // Check if already connected in MetaMask
+            const accounts = await window.ethereum.request({ 
+                method: 'eth_accounts' 
+            });
             
-            try {
-                // Check if MetaMask is installed
-                if (!window.ethereum) {
-                    showError("MetaMask is not installed. Please install MetaMask to use this dApp.");
-                    showLoading(false);
-                    return;
-                }
-
-                // Check if wallet is already connected globally (from other pages)
-                if (window.wallet && window.wallet.isConnected) {
-                    console.log("Using global wallet connection");
-                    currentAccount = window.wallet.account;
-                    isConnected = true;
-                    await connectProfile();
-                    return;
-                }
-
-                // Check if already connected in MetaMask
-                const accounts = await window.ethereum.request({ 
-                    method: 'eth_accounts' 
-                });
-                
-                if (accounts.length > 0) {
-                    currentAccount = accounts[0];
-                    isConnected = true;
-                    await connectProfile();
-                } else {
-                    // Check session storage
-                    const savedAccount = sessionStorage.getItem('connectedAccount');
-                    if (savedAccount) {
-                        try {
-                            const newAccounts = await window.ethereum.request({ 
-                                method: 'eth_requestAccounts' 
-                            });
-                            if (newAccounts.length > 0) {
-                                currentAccount = newAccounts[0];
-                                isConnected = true;
-                                await connectProfile();
-                            } else {
-                                showConnectionPrompt();
-                            }
-                        } catch (error) {
+            if (accounts.length > 0) {
+                currentAccount = accounts[0];
+                isConnected = true;
+                await connectProfile();
+            } else {
+                // Check session storage
+                const savedAccount = sessionStorage.getItem('connectedAccount');
+                if (savedAccount) {
+                    try {
+                        const newAccounts = await window.ethereum.request({ 
+                            method: 'eth_requestAccounts' 
+                        });
+                        if (newAccounts.length > 0) {
+                            currentAccount = newAccounts[0];
+                            isConnected = true;
+                            await connectProfile();
+                        } else {
                             showConnectionPrompt();
                         }
-                    } else {
+                    } catch (error) {
                         showConnectionPrompt();
                     }
-                }
-
-            } catch (error) {
-                console.error('Initialization error:', error);
-                showError(`Initialization failed: ${error.message}`);
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        // Connect profile (auto-connect)
-        async function connectProfile() {
-            try {
-                provider = new ethers.BrowserProvider(window.ethereum);
-                signer = await provider.getSigner();
-                
-                // Display wallet address
-                displayWalletAddress(currentAccount);
-                
-                // Update navbar button
-                updateNavbarButton(currentAccount);
-                
-                // Initialize contracts
-                await initializeContracts();
-                
-                // Load profile data
-                await loadProfileData();
-                
-                // Hide connection status
-                document.getElementById('connectionStatus').style.display = 'none';
-                
-                // Save connection state
-                sessionStorage.setItem('connectedAccount', currentAccount);
-                
-                // Update global state if wallet.js exists
-                if (typeof window.updateWalletDisplay === 'function') {
-                    window.updateWalletDisplay(currentAccount);
-                }
-                
-                showToast("Profile connected successfully", "success");
-                
-            } catch (error) {
-                console.error('Connection error:', error);
-                showError(`Connection failed: ${error.message}`);
-                showConnectionPrompt();
-            }
-        }
-
-        // Initialize contracts
-        async function initializeContracts() {
-            try {
-                // Use ABI from config.js
-                const tournamentABI = window.ABIS && window.ABIS.TOURNAMENT 
-                    ? window.ABIS.TOURNAMENT 
-                    : [
-                        "function getActiveTournament(address) external view returns (string, bool, bool)",
-                        "function getUnclaimedRewards(address) external view returns (string[], uint256[])",
-                        "function getTournamentData(string) external view returns (address, uint256, string, uint256, uint256, bool, bool, uint256, uint256, uint256)",
-                        "function claimReward(string tournamentId) external",
-                        "function expireTournament(string) external"
-                    ];
-
-                const pkcnABI = window.ABIS && window.ABIS.PKCN 
-                    ? window.ABIS.PKCN 
-                    : [
-                        "function balanceOf(address account) external view returns (uint256)",
-                        "function allowance(address owner, address spender) external view returns (uint256)",
-                        "function decimals() external view returns (uint8)"
-                    ];
-
-                const nftABI = window.ABIS && window.ABIS.POKEMON_NFT 
-                    ? window.ABIS.POKEMON_NFT 
-                    : [
-                        "function ownerOf(uint256 tokenId) public view returns (address)",
-                        "function tokenURI(uint256 tokenId) public view returns (string)",
-                        "function balanceOf(address owner) public view returns (uint256)",
-                        "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)"
-                    ];
-
-                // Initialize contracts
-                tournamentContract = new ethers.Contract(
-                    CONFIG.TOURNAMENT_CONTRACT,
-                    tournamentABI,
-                    signer
-                );
-
-                pkcnContract = new ethers.Contract(
-                    CONFIG.PKCN_CONTRACT,
-                    pkcnABI,
-                    signer
-                );
-
-                nftContract = new ethers.Contract(
-                    CONFIG.POKEMON_NFT,
-                    nftABI,
-                    signer
-                );
-
-            } catch (error) {
-                console.error('Contract initialization error:', error);
-                throw error;
-            }
-        }
-
-        // Load all profile data
-        async function loadProfileData() {
-            showLoading(true);
-            
-            try {
-                // Update PKCN balance
-                await updateBalance();
-                
-                // Load unclaimed rewards
-                await loadUnclaimedRewards();
-                
-                // Load tournament history (both blockchain and local)
-                await loadTournamentHistory();
-                
-                // Show sections
-                document.getElementById('unclaimedSection').style.display = 'block';
-                document.getElementById('historySection').style.display = 'block';
-                
-                // Check if we have any data to show
-                const hasData = document.getElementById('historyTableBody').children.length > 0;
-                document.getElementById('noDataState').style.display = hasData ? 'none' : 'block';
-                
-            } catch (error) {
-                console.error('Error loading profile data:', error);
-                showError(`Error loading data: ${error.message}`);
-                
-                // Show no data state if no history
-                document.getElementById('noDataState').style.display = 'block';
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        // Update PKCN balance
-        async function updateBalance() {
-            if (!currentAccount || !pkcnContract) return;
-
-            try {
-                const balance = await pkcnContract.balanceOf(currentAccount);
-                const balanceNum = parseInt(balance.toString());
-                
-                // Update main balance card
-                document.getElementById('pkcnBalance').textContent = `${balanceNum.toLocaleString()} PKCN`;
-                
-                // Update navbar balance
-                updateNavbarBalance(balanceNum);
-                
-            } catch (error) {
-                console.error('Failed to load balance:', error);
-                document.getElementById('pkcnBalance').textContent = "Error loading balance";
-            }
-        }
-
-        // Update navbar balance
-        function updateNavbarBalance(balance) {
-            const pctBalance = document.getElementById('pctBalance');
-            if (pctBalance) {
-                pctBalance.textContent = `${balance.toLocaleString()} PKCN`;
-            }
-        }
-
-        // Update navbar connect button
-        function updateNavbarButton(account) {
-            const walletDisplay = document.getElementById('walletDisplay');
-            if (walletDisplay) {
-                if (account) {
-                    // Shorten the account for display
-                    const shortAccount = account.substring(0, 6) + '...' + account.substring(account.length - 4);
-                    walletDisplay.textContent = shortAccount;
-                    walletDisplay.classList.remove('btn-outline-light');
-                    walletDisplay.classList.add('btn-success');
-                    walletDisplay.onclick = null; // Remove click handler when connected
                 } else {
-                    walletDisplay.textContent = 'Connect';
-                    walletDisplay.classList.remove('btn-success');
-                    walletDisplay.classList.add('btn-outline-light');
-                    walletDisplay.onclick = connectWallet;
+                    showConnectionPrompt();
                 }
             }
-        }
 
-        // Load unclaimed rewards
-        async function loadUnclaimedRewards() {
-            try {
-                const result = await tournamentContract.getUnclaimedRewards(currentAccount);
-                const [tournamentIds, rewards] = result;
-                
-                const grid = document.getElementById('unclaimedRewardsGrid');
-                grid.innerHTML = '';
-                
-                if (tournamentIds && tournamentIds.length > 0) {
-                    for (let i = 0; i < tournamentIds.length; i++) {
-                        const tournamentId = tournamentIds[i];
-                        const reward = rewards[i];
-                        
-                        if (tournamentId && tournamentId.length > 0) {
-                            // Get tournament data for details
-                            let tournamentData;
-                            try {
-                                tournamentData = await tournamentContract.getTournamentData(tournamentId);
-                            } catch (error) {
-                                tournamentData = null;
-                            }
-                            
-                            const rewardCard = createRewardCard(tournamentId, reward, tournamentData);
-                            grid.appendChild(rewardCard);
-                        }
-                    }
-                } else {
-                    grid.innerHTML = `
-                        <div class="no-data" style="grid-column: 1/-1;">
-                            <p>No unclaimed rewards</p>
-                        </div>
-                    `;
-                }
-                
-            } catch (error) {
-                console.error('Error loading unclaimed rewards:', error);
-                document.getElementById('unclaimedRewardsGrid').innerHTML = `
-                    <div class="no-data" style="grid-column: 1/-1;">
-                        <p>Error loading rewards</p>
-                    </div>
-                `;
-            }
+        } catch (error) {
+            console.error('Initialization error:', error);
+            showError(`Initialization failed: ${error.message}`);
+        } finally {
+            showLoading(false);
         }
+    }
 
-        // Create reward card
-        function createRewardCard(tournamentId, reward, tournamentData) {
-            const card = document.createElement('div');
-            card.className = 'reward-card';
+    // Connect profile (auto-connect)
+    async function connectProfile() {
+        try {
+            provider = new ethers.BrowserProvider(window.ethereum);
+            signer = await provider.getSigner();
             
-            // Shorten tournament ID for display
-            const shortId = tournamentId.length > 20 
-                ? tournamentId.substring(0, 10) + '...' + tournamentId.substring(tournamentId.length - 10)
-                : tournamentId;
+            // Display wallet address
+            displayWalletAddress(currentAccount);
             
-            // Extract tournament details
-            let difficulty = "Unknown";
-            let wins = 0;
-            let opponentCount = 0;
-            let tokenId = 0;
+            // Update navbar button
+            updateNavbarButton(currentAccount);
             
-            if (tournamentData) {
-                difficulty = DIFFICULTY_LABELS[tournamentData[2]] || tournamentData[2];
-                wins = tournamentData[3]?.toString() || "0";
-                opponentCount = tournamentData[4]?.toString() || "0";
-                tokenId = tournamentData[1]?.toString() || "0";
+            // Initialize contracts
+            await initializeContracts();
+            
+            // Load profile data
+            await loadProfileData();
+            
+            // Hide connection status
+            document.getElementById('connectionStatus').style.display = 'none';
+            
+            // Save connection state
+            sessionStorage.setItem('connectedAccount', currentAccount);
+            
+            // Update global state if wallet.js exists
+            if (typeof window.updateWalletDisplay === 'function') {
+                window.updateWalletDisplay(currentAccount);
             }
             
-            card.innerHTML = `
-                <div class="reward-header">
-                    <span class="tournament-id">${shortId}</span>
-                    <span class="reward-amount">${reward.toString()} PKCN</span>
-                </div>
-                <div class="reward-details">
-                    <div class="detail-row">
-                        <span class="detail-label">Difficulty:</span>
-                        <span class="detail-value">${difficulty}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Wins:</span>
-                        <span class="detail-value">${wins}/${opponentCount}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Pokémon:</span>
-                        <span class="detail-value">#${tokenId}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Status:</span>
-                        <span class="detail-value" style="color: var(--secondary);">Unclaimed</span>
-                    </div>
-                </div>
-                <button class="claim-button" onclick="claimReward('${tournamentId}')">
-                    <i class="bi bi-cash"></i> Claim Reward
-                </button>
-            `;
+            showToast("Profile connected successfully", "success");
             
-            return card;
+        } catch (error) {
+            console.error('Connection error:', error);
+            showError(`Connection failed: ${error.message}`);
+            showConnectionPrompt();
         }
+    }
 
-        // Load tournament history (both blockchain and localStorage)
-        async function loadTournamentHistory() {
-            const tableBody = document.getElementById('historyTableBody');
-            tableBody.innerHTML = '';
+    // Initialize contracts
+    async function initializeContracts() {
+        try {
+            // Use ABI from config.js
+            const tournamentABI = window.ABIS && window.ABIS.TOURNAMENT 
+                ? window.ABIS.TOURNAMENT 
+                : [
+                    "function getActiveTournament(address) external view returns (string, bool, bool)",
+                    "function getUnclaimedRewards(address) external view returns (string[], uint256[])",
+                    "function getTournamentData(string) external view returns (address, uint256, string, uint256, uint256, bool, bool, uint256, uint256, uint256)",
+                    "function claimReward(string tournamentId) external",
+                    "function expireTournament(string) external"
+                ];
+
+            const pkcnABI = window.ABIS && window.ABIS.PKCN 
+                ? window.ABIS.PKCN 
+                : [
+                    "function balanceOf(address account) external view returns (uint256)",
+                    "function allowance(address owner, address spender) external view returns (uint256)",
+                    "function decimals() external view returns (uint8)"
+                ];
+
+            const nftABI = window.ABIS && window.ABIS.POKEMON_NFT 
+                ? window.ABIS.POKEMON_NFT 
+                : [
+                    "function ownerOf(uint256 tokenId) public view returns (address)",
+                    "function tokenURI(uint256 tokenId) public view returns (string)",
+                    "function balanceOf(address owner) public view returns (uint256)",
+                    "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)"
+                ];
+
+            // Initialize contracts
+            tournamentContract = new ethers.Contract(
+                CONFIG.TOURNAMENT_CONTRACT,
+                tournamentABI,
+                signer
+            );
+
+            pkcnContract = new ethers.Contract(
+                CONFIG.PKCN_CONTRACT,
+                pkcnABI,
+                signer
+            );
+
+            nftContract = new ethers.Contract(
+                CONFIG.POKEMON_NFT,
+                nftABI,
+                signer
+            );
+
+        } catch (error) {
+            console.error('Contract initialization error:', error);
+            throw error;
+        }
+    }
+
+    // Load all profile data
+    async function loadProfileData() {
+        showLoading(true);
+        
+        try {
+            // Update PKCN balance
+            await updateBalance();
             
-            let allHistory = [];
+            // Load unclaimed rewards (BOTH blockchain + local)
+            await loadUnclaimedRewards();
             
-            // Load from blockchain
-            try {
-                const result = await tournamentContract.getUnclaimedRewards(currentAccount);
-                const [tournamentIds, rewards] = result;
-                
-                if (tournamentIds && tournamentIds.length > 0) {
-                    for (let i = 0; i < tournamentIds.length; i++) {
+            // Load tournament history (both blockchain and local)
+            await loadTournamentHistory();
+            
+            // Show sections
+            document.getElementById('unclaimedSection').style.display = 'block';
+            document.getElementById('historySection').style.display = 'block';
+            
+            // Check if we have any data to show
+            const hasData = document.getElementById('historyTableBody').children.length > 0;
+            document.getElementById('noDataState').style.display = hasData ? 'none' : 'block';
+            
+        } catch (error) {
+            console.error('Error loading profile data:', error);
+            showError(`Error loading data: ${error.message}`);
+            
+            // Show no data state if no history
+            document.getElementById('noDataState').style.display = 'block';
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    // Update PKCN balance
+    async function updateBalance() {
+        if (!currentAccount || !pkcnContract) return;
+
+        try {
+            const balance = await pkcnContract.balanceOf(currentAccount);
+            const balanceNum = parseInt(balance.toString());
+            
+            // Update main balance card
+            document.getElementById('pkcnBalance').textContent = `${balanceNum.toLocaleString()} PKCN`;
+            
+            // Update navbar balance
+            updateNavbarBalance(balanceNum);
+            
+        } catch (error) {
+            console.error('Failed to load balance:', error);
+            document.getElementById('pkcnBalance').textContent = "Error loading balance";
+        }
+    }
+
+    // Update navbar balance
+    function updateNavbarBalance(balance) {
+        const pctBalance = document.getElementById('pctBalance');
+        if (pctBalance) {
+            pctBalance.textContent = `${balance.toLocaleString()} PKCN`;
+        }
+    }
+
+    // Update navbar connect button
+    function updateNavbarButton(account) {
+        const walletDisplay = document.getElementById('walletDisplay');
+        if (walletDisplay) {
+            if (account) {
+                // Shorten the account for display
+                const shortAccount = account.substring(0, 6) + '...' + account.substring(account.length - 4);
+                walletDisplay.textContent = shortAccount;
+                walletDisplay.classList.remove('btn-outline-light');
+                walletDisplay.classList.add('btn-success');
+                walletDisplay.onclick = null; // Remove click handler when connected
+            } else {
+                walletDisplay.textContent = 'Connect';
+                walletDisplay.classList.remove('btn-success');
+                walletDisplay.classList.add('btn-outline-light');
+                walletDisplay.onclick = connectWallet;
+            }
+        }
+    }
+
+    // Load unclaimed rewards (BOTH blockchain and local)
+async function loadUnclaimedRewards() {
+    try {
+        const grid = document.getElementById('unclaimedRewardsGrid');
+        grid.innerHTML = '';
+        
+        let hasRewards = false;
+        let claimedTournamentIds = new Set(); // Track claimed tournament IDs
+        
+        console.log('Loading unclaimed rewards for account:', currentAccount);
+        
+        // First, get blockchain rewards
+        let blockchainRewards = [];
+        try {
+            const result = await tournamentContract.getUnclaimedRewards(currentAccount);
+            const [tournamentIds, rewards] = result;
+            
+            console.log('Blockchain unclaimed rewards:', tournamentIds, rewards);
+            
+            if (tournamentIds && tournamentIds.length > 0) {
+                for (let i = 0; i < tournamentIds.length; i++) {
+                    const tournamentId = tournamentIds[i];
+                    const reward = rewards[i];
+                    
+                    if (tournamentId && tournamentId.length > 0 && reward > 0) {
+                        // Get tournament data for details
+                        let tournamentData;
                         try {
-                            const tournamentData = await tournamentContract.getTournamentData(tournamentIds[i]);
-                            const row = await createHistoryRow(tournamentIds[i], tournamentData, rewards[i]);
-                            allHistory.push({
-                                element: row,
-                                timestamp: tournamentData[9]?.toString() || 0,
-                                isBlockchain: true,
-                                id: tournamentIds[i]
-                            });
+                            tournamentData = await tournamentContract.getTournamentData(tournamentId);
+                            const isClaimed = tournamentData[6]; // Check if already claimed
+                            
+                            if (!isClaimed) {
+                                blockchainRewards.push({
+                                    tournamentId,
+                                    reward: reward.toString(),
+                                    tournamentData,
+                                    source: 'blockchain'
+                                });
+                            } else {
+                                console.log('Tournament already claimed:', tournamentId);
+                                claimedTournamentIds.add(tournamentId);
+                            }
                         } catch (error) {
-                            console.error(`Error loading blockchain tournament ${tournamentIds[i]}:`, error);
+                            console.error('Error getting tournament data:', error);
+                            // Still add it if we can't check
+                            blockchainRewards.push({
+                                tournamentId,
+                                reward: reward.toString(),
+                                tournamentData: null,
+                                source: 'blockchain'
+                            });
                         }
                     }
                 }
-            } catch (error) {
-                console.error('Error loading blockchain tournament history:', error);
+            }
+        } catch (error) {
+            console.error('Error loading blockchain rewards:', error);
+        }
+        
+        // Create cards for blockchain rewards
+        if (blockchainRewards.length > 0) {
+            for (const reward of blockchainRewards) {
+                const rewardCard = createRewardCard(reward.tournamentId, reward.reward, reward.tournamentData);
+                grid.appendChild(rewardCard);
+                hasRewards = true;
+                claimedTournamentIds.add(reward.tournamentId); // Mark as claimed source
+            }
+        }
+        
+        // Now load from localStorage (failed claims)
+        try {
+            const rawData = localStorage.getItem('unclaimedRewardsLocal') || '[]';
+            let localUnclaimed = JSON.parse(rawData);
+            
+            if (!Array.isArray(localUnclaimed)) {
+                console.error('localUnclaimed is not an array! Resetting...');
+                localStorage.setItem('unclaimedRewardsLocal', '[]');
+                localUnclaimed = [];
             }
             
-            // Load from localStorage
-            try {
-                const localHistory = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
-                console.log(`Found ${localHistory.length} local tournament records`);
+            console.log(`Found ${localUnclaimed.length} local unclaimed rewards`);
+            
+            const validLocalUnclaimed = [];
+            
+            for (const unclaimed of localUnclaimed) {
+                console.log('Processing local unclaimed:', unclaimed);
                 
-                for (const tournament of localHistory) {
+                // Skip if this tournament ID is already in claimed set
+                if (claimedTournamentIds.has(unclaimed.tournamentId)) {
+                    console.log('Skipping - already claimed or on blockchain:', unclaimed.tournamentId);
+                    continue;
+                }
+                
+                // Check age (max 7 days)
+                const tournamentAge = Date.now() - (unclaimed.timestamp || 0);
+                const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+                
+                if (tournamentAge < maxAge) {
+                    console.log('Creating card for:', unclaimed.tournamentId);
+                    const rewardCard = createLocalRewardCard(unclaimed);
+                    grid.appendChild(rewardCard);
+                    hasRewards = true;
+                    validLocalUnclaimed.push(unclaimed);
+                } else {
+                    console.log('Filtered out (expired):', unclaimed.tournamentId);
+                }
+            }
+            
+            // Update localStorage with filtered list
+            localStorage.setItem('unclaimedRewardsLocal', JSON.stringify(validLocalUnclaimed));
+            
+        } catch (error) {
+            console.error('Error loading local unclaimed rewards:', error);
+            localStorage.setItem('unclaimedRewardsLocal', '[]');
+        }
+        
+        if (!hasRewards) {
+            console.log('No unclaimed rewards found');
+            grid.innerHTML = `
+                <div class="no-data" style="grid-column: 1/-1;">
+                    <p>No unclaimed rewards</p>
+                </div>
+            `;
+        }
+        
+    } catch (error) {
+        console.error('Critical error in loadUnclaimedRewards:', error);
+        document.getElementById('unclaimedRewardsGrid').innerHTML = `
+            <div class="no-data" style="grid-column: 1/-1;">
+                <p>Error loading rewards</p>
+            </div>
+        `;
+    }
+}
+    // Create reward card for local unclaimed rewards
+    function createLocalRewardCard(unclaimed) {
+        console.log('Creating card for unclaimed:', unclaimed);
+        
+        const card = document.createElement('div');
+        card.className = 'reward-card';
+        
+        // FIX: Safe property access
+        const tournamentId = unclaimed?.tournamentId || 'unknown';
+        const shortId = tournamentId.length > 20 
+            ? tournamentId.substring(0, 10) + '...' + tournamentId.substring(tournamentId.length - 10)
+            : tournamentId;
+        
+        const difficulty = DIFFICULTY_LABELS[unclaimed?.difficulty] || unclaimed?.difficulty || 'Unknown';
+        
+        card.innerHTML = `
+            <div class="reward-header">
+                <span class="tournament-id">${shortId}</span>
+                <span class="reward-amount">${unclaimed?.reward || 0} PKCN</span>
+            </div>
+            <div class="reward-details">
+                <div class="detail-row">
+                    <span class="detail-label">Difficulty:</span>
+                    <span class="detail-value">${difficulty}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Wins:</span>
+                    <span class="detail-value">${unclaimed?.wins || 0}/${unclaimed?.opponentCount || 0}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Status:</span>
+                    <span class="detail-value" style="color: var(--warning);">⚠️ Unclaimed (Retry)</span>
+                </div>
+            </div>
+            <button class="claim-button" onclick="claimLocalReward('${tournamentId}')">
+                <i class="bi bi-cash"></i> Claim Now
+            </button>
+        `;
+        
+        return card;
+    }
+
+    // Claim local unclaimed reward (includes automatic completion if needed)
+// Add this function to force refresh all data
+async function forceRefreshProfileData() {
+    showLoading(true, "Refreshing data...");
+    
+    try {
+        // Clear all sections
+        document.getElementById('unclaimedRewardsGrid').innerHTML = '';
+        document.getElementById('historyTableBody').innerHTML = '';
+        
+        // Reload everything
+        await Promise.all([
+            updateBalance(),
+            loadUnclaimedRewards(),
+            loadTournamentHistory()
+        ]);
+        
+        console.log('Profile data force refreshed');
+    } catch (error) {
+        console.error('Error force refreshing:', error);
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Update the claimLocalReward function to also call forceRefreshProfileData
+async function claimLocalReward(tournamentId) {
+    console.log('claimLocalReward called for:', tournamentId);
+    
+    if (!tournamentContract) {
+        showToast("Contract not available", "error");
+        return;
+    }
+    
+    try {
+        showLoading(true, "Processing reward claim...");
+        
+        // Clean up local data first
+        cleanupLocalReward(tournamentId);
+        
+        // Now claim the reward
+        const claimTx = await tournamentContract.claimReward(tournamentId);
+        showToast("Transaction sent...", "info");
+        
+        const receipt = await claimTx.wait();
+        
+        if (receipt.status === 1) {
+            showToast("✅ Reward claimed successfully!", "success");
+            
+            // Force refresh all data
+            await forceRefreshProfileData();
+            
+        } else {
+            showToast("Claim transaction failed", "error");
+        }
+        
+    } catch (error) {
+        console.error('Error claiming local reward:', error);
+        showToast(`Claim failed: ${error.message}`, "error");
+        
+        // If it's an "already claimed" error, clean up and refresh
+        if (error.message.includes("already claimed")) {
+            cleanupLocalReward(tournamentId);
+            await forceRefreshProfileData();
+        }
+    } finally {
+        showLoading(false);
+    }
+}
+    // Create reward card (for blockchain rewards)
+    // Create reward card (for blockchain rewards)
+function createRewardCard(tournamentId, reward, tournamentData) {
+    const card = document.createElement('div');
+    card.className = 'reward-card';
+    card.setAttribute('data-tournament-id', tournamentId);
+    card.setAttribute('data-source', 'blockchain');
+    
+    // Shorten tournament ID for display
+    const shortId = tournamentId.length > 20 
+        ? tournamentId.substring(0, 10) + '...' + tournamentId.substring(tournamentId.length - 10)
+        : tournamentId;
+    
+    // Extract tournament details
+    let difficulty = "Unknown";
+    let wins = 0;
+    let opponentCount = 0;
+    let tokenId = 0;
+    let isClaimed = false;
+    
+    if (tournamentData) {
+        difficulty = DIFFICULTY_LABELS[tournamentData[2]] || tournamentData[2];
+        wins = tournamentData[3]?.toString() || "0";
+        opponentCount = tournamentData[4]?.toString() || "0";
+        tokenId = tournamentData[1]?.toString() || "0";
+        isClaimed = tournamentData[6] || false;
+    }
+    
+    if (isClaimed) {
+        card.style.opacity = "0.6";
+        card.style.borderColor = "#666";
+    }
+    
+    card.innerHTML = `
+        <div class="reward-header">
+            <span class="tournament-id">${shortId}</span>
+            <span class="reward-amount">${reward.toString()} PKCN</span>
+        </div>
+        <div class="reward-details">
+            <div class="detail-row">
+                <span class="detail-label">Difficulty:</span>
+                <span class="detail-value">${difficulty}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Wins:</span>
+                <span class="detail-value">${wins}/${opponentCount}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Pokémon:</span>
+                <span class="detail-value">#${tokenId}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Status:</span>
+                <span class="detail-value" style="color: ${isClaimed ? '#666' : 'var(--secondary)'};">
+                    ${isClaimed ? 'Already Claimed' : 'Unclaimed'}
+                </span>
+            </div>
+        </div>
+        <button class="claim-button" onclick="claimReward('${tournamentId}')" ${isClaimed ? 'disabled style="opacity:0.5;"' : ''}>
+            <i class="bi bi-cash"></i> ${isClaimed ? 'Already Claimed' : 'Claim Reward'}
+        </button>
+    `;
+    
+    return card;
+}
+
+    // Load tournament history (both blockchain and localStorage)
+    async function loadTournamentHistory() {
+        const tableBody = document.getElementById('historyTableBody');
+        tableBody.innerHTML = '';
+        
+        let allHistory = [];
+        
+        // Load from blockchain
+        try {
+            const result = await tournamentContract.getUnclaimedRewards(currentAccount);
+            const [tournamentIds, rewards] = result;
+            
+            if (tournamentIds && tournamentIds.length > 0) {
+                for (let i = 0; i < tournamentIds.length; i++) {
                     try {
-                        const row = createLocalHistoryRow(tournament);
+                        const tournamentData = await tournamentContract.getTournamentData(tournamentIds[i]);
+                        const row = await createHistoryRow(tournamentIds[i], tournamentData, rewards[i]);
                         allHistory.push({
                             element: row,
-                            timestamp: tournament.timestamp || 0,
-                            isBlockchain: false,
-                            id: tournament.tournamentId
+                            timestamp: tournamentData[9]?.toString() || 0,
+                            isBlockchain: true,
+                            id: tournamentIds[i]
                         });
                     } catch (error) {
-                        console.error('Error creating local history row:', error);
+                        console.error(`Error loading blockchain tournament ${tournamentIds[i]}:`, error);
                     }
                 }
-            } catch (error) {
-                console.error('Error loading local tournament history:', error);
             }
-            
-            // Sort by timestamp (newest first)
-            allHistory.sort((a, b) => b.timestamp - a.timestamp);
-            
-            // Add to DOM and add click listeners
-            if (allHistory.length > 0) {
-                allHistory.forEach(item => {
-                    tableBody.appendChild(item.element);
-                    // Add click listener for tournament details
-                    item.element.addEventListener('click', () => {
-                        if (item.isBlockchain) {
-                            showTournamentDetails(item.id);
-                        } else {
-                            showLocalTournamentDetails(item.id);
-                        }
-                    });
-                });
-                document.getElementById('noDataState').style.display = 'none';
-            } else {
-                document.getElementById('noDataState').style.display = 'block';
-            }
+        } catch (error) {
+            console.error('Error loading blockchain tournament history:', error);
         }
+        
+        // Load from localStorage
+        try {
+            const localHistory = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
+            console.log(`Found ${localHistory.length} local tournament records`);
+            
+            for (const tournament of localHistory) {
+                try {
+                    // FIX: Validate tournament object before processing
+                    if (!tournament || !tournament.tournamentId || !tournament.playerPokemon) {
+                        console.warn('Skipping invalid tournament data:', tournament);
+                        continue;
+                    }
+                    const row = createLocalHistoryRow(tournament);
+                    allHistory.push({
+                        element: row,
+                        timestamp: tournament.timestamp || 0,
+                        isBlockchain: false,
+                        id: tournament.tournamentId
+                    });
+                } catch (error) {
+                    console.error('Error creating local history row:', error);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading local tournament history:', error);
+            // Reset corrupted data
+            localStorage.setItem('tournamentHistory', '[]');
+        }
+        
+        // Sort by timestamp (newest first)
+        allHistory.sort((a, b) => b.timestamp - a.timestamp);
+        
+        // Add to DOM and add click listeners
+        if (allHistory.length > 0) {
+            allHistory.forEach(item => {
+                tableBody.appendChild(item.element);
+                // Add click listener for tournament details
+                item.element.addEventListener('click', () => {
+                    if (item.isBlockchain) {
+                        showTournamentDetails(item.id);
+                    } else {
+                        showLocalTournamentDetails(item.id);
+                    }
+                });
+            });
+            document.getElementById('noDataState').style.display = 'none';
+        } else {
+            document.getElementById('noDataState').style.display = 'block';
+        }
+    }
 
-        // Create history row for blockchain data
-        async function createHistoryRow(tournamentId, tournamentData, reward) {
+    // Create history row for blockchain data
+    async function createHistoryRow(tournamentId, tournamentData, reward) {
+        const row = document.createElement('div');
+        row.className = 'history-row';
+        
+        // Shorten tournament ID
+        const shortId = tournamentId.length > 15 
+            ? tournamentId.substring(0, 8) + '...'
+            : tournamentId;
+        
+        // Extract tournament data
+        const player = tournamentData[0];
+        const tokenId = tournamentData[1]?.toString() || "0";
+        const difficulty = tournamentData[2] || "unknown";
+        const wins = tournamentData[3]?.toString() || "0";
+        const opponentCount = tournamentData[4]?.toString() || "0";
+        const isComplete = tournamentData[5] || false;
+        const rewardClaimed = tournamentData[6] || false;
+        const entryFee = tournamentData[7]?.toString() || "50";
+        const finalReward = tournamentData[8]?.toString() || "0";
+        
+        // Calculate earnings (reward - 50 entry fee)
+        const entryFeeNum = BigInt(entryFee);
+        const rewardNum = BigInt(finalReward);
+        const earnings = Number(rewardNum - entryFeeNum);
+        
+        // Determine standing
+        const standing = `${wins}/${opponentCount}`;
+        const standingClass = parseInt(wins) >= parseInt(opponentCount) / 2 ? 'standing-won' : 'standing-lost';
+        
+        // Determine earnings color
+        const earningsClass = earnings >= 0 ? 'earnings-positive' : 'earnings-negative';
+        
+        // Get Pokémon name
+        let pokemonName = `#${tokenId}`;
+        try {
+            const tokenURI = await nftContract.tokenURI(tokenId);
+            const metadata = JSON.parse(atob(tokenURI.split(',')[1]));
+            pokemonName = metadata.name || `#${tokenId}`;
+        } catch (error) {
+            // Use token ID as fallback
+        }
+        
+        row.innerHTML = `
+            <div class="history-cell tournament-id-cell" data-label="Tournament ID">
+                ${shortId}
+            </div>
+            <div class="history-cell" data-label="Pokémon">
+                <div class="pokemon-info">
+                    <div class="pokemon-avatar">
+                        ${tokenId}
+                    </div>
+                    <span>${pokemonName}</span>
+                </div>
+            </div>
+            <div class="history-cell" data-label="Opponents">
+                ${opponentCount}
+            </div>
+            <div class="history-cell" data-label="Difficulty">
+                <span class="difficulty-badge difficulty-${difficulty}">
+                    ${DIFFICULTY_LABELS[difficulty] || difficulty}
+                </span>
+            </div>
+            <div class="history-cell" data-label="Standing">
+                <span class="standing-badge ${standingClass}">
+                    ${standing}
+                </span>
+            </div>
+            <div class="history-cell" data-label="Winning">
+                ${finalReward} PKCN
+            </div>
+            <div class="history-cell" data-label="Earnings">
+                <span class="${earningsClass}">
+                    ${earnings >= 0 ? '+' : ''}${earnings.toString()} PKCN
+                </span>
+            </div>
+        `;
+        
+        return row;
+    }
+
+    // Create history row for localStorage data (with robust error handling)
+    function createLocalHistoryRow(tournament) {
+        try {
+            // FIX: Validate tournament object
+            if (!tournament || !tournament.tournamentId) {
+                console.error('Invalid tournament data:', tournament);
+                // Return empty element instead of crashing
+                const emptyRow = document.createElement('div');
+                emptyRow.style.display = 'none';
+                return emptyRow;
+            }
+            
             const row = document.createElement('div');
             row.className = 'history-row';
             
-            // Shorten tournament ID
-            const shortId = tournamentId.length > 15 
-                ? tournamentId.substring(0, 8) + '...'
-                : tournamentId;
+            const shortId = tournament.tournamentId.length > 15 
+                ? tournament.tournamentId.substring(0, 8) + '...'
+                : tournament.tournamentId;
             
-            // Extract tournament data
-            const player = tournamentData[0];
-            const tokenId = tournamentData[1]?.toString() || "0";
-            const difficulty = tournamentData[2] || "unknown";
-            const wins = tournamentData[3]?.toString() || "0";
-            const opponentCount = tournamentData[4]?.toString() || "0";
-            const isComplete = tournamentData[5] || false;
-            const rewardClaimed = tournamentData[6] || false;
-            const entryFee = tournamentData[7]?.toString() || "50";
-            const finalReward = tournamentData[8]?.toString() || "0";
+            // FIX: Add safe fallbacks for all properties
+            const wins = tournament.wins || 0;
+            const opponentCount = tournament.opponentCount || 0;
+            const totalReward = tournament.totalReward || 0;
+            const playerPokemon = tournament.playerPokemon || {};
+            const difficulty = tournament.difficulty || 'normal';
             
-            // Calculate earnings (reward - 50 entry fee)
-            const entryFeeNum = BigInt(entryFee);
-            const rewardNum = BigInt(finalReward);
-            const earnings = Number(rewardNum - entryFeeNum);
-            
-            // Determine standing
-            const standing = `${wins}/${opponentCount}`;
-            const standingClass = parseInt(wins) >= parseInt(opponentCount) / 2 ? 'standing-won' : 'standing-lost';
-            
-            // Determine earnings color
+            const standingClass = wins >= opponentCount / 2 ? 'standing-won' : 'standing-lost';
+            const earnings = totalReward - 50;
             const earningsClass = earnings >= 0 ? 'earnings-positive' : 'earnings-negative';
-            
-            // Get Pokémon name
-            let pokemonName = `#${tokenId}`;
-            try {
-                const tokenURI = await nftContract.tokenURI(tokenId);
-                const metadata = JSON.parse(atob(tokenURI.split(',')[1]));
-                pokemonName = metadata.name || `#${tokenId}`;
-            } catch (error) {
-                // Use token ID as fallback
-            }
+            const date = new Date(tournament.timestamp || Date.now()).toLocaleDateString();
             
             row.innerHTML = `
                 <div class="history-cell tournament-id-cell" data-label="Tournament ID">
-                    ${shortId}
+                    ${shortId} <span style="color: #666; font-size: 0.8em;">(${date})</span>
                 </div>
                 <div class="history-cell" data-label="Pokémon">
                     <div class="pokemon-info">
                         <div class="pokemon-avatar">
-                            ${tokenId}
+                            ${playerPokemon.tokenId || playerPokemon.id || '0'}
                         </div>
-                        <span>${pokemonName}</span>
+                        <span>${playerPokemon.name || 'Unknown'}</span>
                     </div>
                 </div>
                 <div class="history-cell" data-label="Opponents">
@@ -1049,63 +1391,11 @@
                 </div>
                 <div class="history-cell" data-label="Standing">
                     <span class="standing-badge ${standingClass}">
-                        ${standing}
+                        ${wins}/${opponentCount}
                     </span>
                 </div>
                 <div class="history-cell" data-label="Winning">
-                    ${finalReward} PKCN
-                </div>
-                <div class="history-cell" data-label="Earnings">
-                    <span class="${earningsClass}">
-                        ${earnings >= 0 ? '+' : ''}${earnings.toString()} PKCN
-                    </span>
-                </div>
-            `;
-            
-            return row;
-        }
-
-        // Create history row for localStorage data
-        function createLocalHistoryRow(tournament) {
-            const row = document.createElement('div');
-            row.className = 'history-row';
-            
-            const shortId = tournament.tournamentId.length > 15 
-                ? tournament.tournamentId.substring(0, 8) + '...'
-                : tournament.tournamentId;
-            
-            const standingClass = tournament.wins >= tournament.opponentCount / 2 ? 'standing-won' : 'standing-lost';
-            const earnings = tournament.totalReward - 50; // Subtract entry fee
-            const earningsClass = earnings >= 0 ? 'earnings-positive' : 'earnings-negative';
-            const date = new Date(tournament.timestamp).toLocaleDateString();
-            
-            row.innerHTML = `
-                <div class="history-cell tournament-id-cell" data-label="Tournament ID">
-                    ${shortId} <span style="color: #666; font-size: 0.8em;">(${date})</span>
-                </div>
-                <div class="history-cell" data-label="Pokémon">
-                    <div class="pokemon-info">
-                        <div class="pokemon-avatar">
-                            ${tournament.playerPokemon.tokenId || tournament.playerPokemon.id}
-                        </div>
-                        <span>${tournament.playerPokemon.name}</span>
-                    </div>
-                </div>
-                <div class="history-cell" data-label="Opponents">
-                    ${tournament.opponentCount}
-                </div>
-                <div class="history-cell" data-label="Difficulty">
-                    <span class="difficulty-badge difficulty-${tournament.difficulty}">
-                        ${DIFFICULTY_LABELS[tournament.difficulty] || tournament.difficulty}
-                    </span>
-                </div>
-                <div class="history-cell" data-label="Standing">
-                    <span class="standing-badge ${standingClass}">
-                        ${tournament.wins}/${tournament.opponentCount}
-                    </span>
-                </div>
-                <div class="history-cell" data-label="Winning">
-                    ${tournament.totalReward} PKCN
+                    ${totalReward} PKCN
                 </div>
                 <div class="history-cell" data-label="Earnings">
                     <span class="${earningsClass}">
@@ -1115,309 +1405,391 @@
             `;
             
             return row;
+        } catch (error) {
+            console.error('CRITICAL ERROR in createLocalHistoryRow:', error);
+            // Return hidden element instead of crashing
+            const errorRow = document.createElement('div');
+            errorRow.style.display = 'none';
+            return errorRow;
         }
+    }
 
-        // Show blockchain tournament details
-        async function showTournamentDetails(tournamentId) {
+    // Show blockchain tournament details
+    async function showTournamentDetails(tournamentId) {
+        try {
+            const tournamentData = await tournamentContract.getTournamentData(tournamentId);
+            const player = tournamentData[0];
+            const tokenId = tournamentData[1]?.toString() || "0";
+            const difficulty = tournamentData[2] || "unknown";
+            const wins = tournamentData[3]?.toString() || "0";
+            const opponentCount = tournamentData[4]?.toString() || "0";
+            const finalReward = tournamentData[8]?.toString() || "0";
+            
+            let pokemonName = `#${tokenId}`;
             try {
-                const tournamentData = await tournamentContract.getTournamentData(tournamentId);
-                const player = tournamentData[0];
-                const tokenId = tournamentData[1]?.toString() || "0";
-                const difficulty = tournamentData[2] || "unknown";
-                const wins = tournamentData[3]?.toString() || "0";
-                const opponentCount = tournamentData[4]?.toString() || "0";
-                const finalReward = tournamentData[8]?.toString() || "0";
-                
-                let pokemonName = `#${tokenId}`;
-                try {
-                    const tokenURI = await nftContract.tokenURI(tokenId);
-                    const metadata = JSON.parse(atob(tokenURI.split(',')[1]));
-                    pokemonName = metadata.name || `#${tokenId}`;
-                } catch (error) {
-                    // Fallback to token ID
-                }
-                
-                const modal = new bootstrap.Modal(document.getElementById('battleDetailModal'));
-                const content = document.getElementById('battleDetailContent');
-                
-                content.innerHTML = `
-                    <div class="battle-detail-item">
-                        <h6 style="color: var(--primary);">Tournament Summary</h6>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Tournament ID:</strong></div>
-                            <div class="col-6">${tournamentId}</div>
-                        </div>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Pokémon:</strong></div>
-                            <div class="col-6">${pokemonName} (#${tokenId})</div>
-                        </div>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Difficulty:</strong></div>
-                            <div class="col-6">${DIFFICULTY_LABELS[difficulty] || difficulty}</div>
-                        </div>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Final Standing:</strong></div>
-                            <div class="col-6">${wins}/${opponentCount} Wins</div>
-                        </div>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Total Reward:</strong></div>
-                            <div class="col-6">${finalReward} PKCN</div>
-                        </div>
-                    </div>
-                    <div class="battle-detail-item">
-                        <h6 style="color: var(--info);">Blockchain Record</h6>
-                        <p style="font-size: 0.9em; color: #aaa;">This tournament is recorded on the blockchain.</p>
-                    </div>
-                `;
-                
-                modal.show();
-                
+                const tokenURI = await nftContract.tokenURI(tokenId);
+                const metadata = JSON.parse(atob(tokenURI.split(',')[1]));
+                pokemonName = metadata.name || `#${tokenId}`;
             } catch (error) {
-                console.error('Error loading tournament details:', error);
-                showToast('Error loading tournament details', 'error');
+                // Use token ID as fallback
             }
-        }
-
-        // Show local tournament details with battle history
-        function showLocalTournamentDetails(tournamentId) {
-            try {
-                const tournamentHistory = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
-                const tournament = tournamentHistory.find(t => t.tournamentId === tournamentId);
-                
-                if (!tournament) {
-                    showToast('Tournament details not found', 'error');
-                    return;
-                }
-                
-                const modal = new bootstrap.Modal(document.getElementById('battleDetailModal'));
-                const content = document.getElementById('battleDetailContent');
-                
-                const date = new Date(tournament.timestamp).toLocaleString();
-                const earnings = tournament.totalReward - 50;
-                
-                content.innerHTML = `
-                    <div class="battle-detail-item">
-                        <h6 style="color: var(--primary);">Tournament Summary</h6>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Date:</strong></div>
-                            <div class="col-6">${date}</div>
-                        </div>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Pokémon:</strong></div>
-                            <div class="col-6">${tournament.playerPokemon.name} (#${tournament.playerPokemon.tokenId || tournament.playerPokemon.id})</div>
-                        </div>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Difficulty:</strong></div>
-                            <div class="col-6">${DIFFICULTY_LABELS[tournament.difficulty] || tournament.difficulty}</div>
-                        </div>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Final Standing:</strong></div>
-                            <div class="col-6">${tournament.wins}/${tournament.opponentCount} Wins</div>
-                        </div>
-                        <div class="row mb-2">
-                            <div class="col-6"><strong>Total Reward:</strong></div>
-                            <div class="col-6">${tournament.totalReward} PKCN</div>
-                        </div>
-                        <div class="row">
-                            <div class="col-6"><strong>Net Earnings:</strong></div>
-                            <div class="col-6" style="color: ${earnings >= 0 ? 'var(--primary)' : 'var(--danger)'}; font-weight: 800;">
-                                ${earnings >= 0 ? '+' : ''}${earnings} PKCN
-                            </div>
-                        </div>
+            
+            const modal = new bootstrap.Modal(document.getElementById('battleDetailModal'));
+            const content = document.getElementById('battleDetailContent');
+            
+            content.innerHTML = `
+                <div class="battle-detail-item">
+                    <h6 style="color: var(--primary);">Tournament Summary</h6>
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Tournament ID:</strong></div>
+                        <div class="col-6">${tournamentId}</div>
                     </div>
-                    <div class="battle-detail-item">
-                        <h6 style="color: var(--info);">Local Record</h6>
-                        <p style="font-size: 0.9em; color: #aaa;">This tournament is stored locally in your browser.</p>
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Pokémon:</strong></div>
+                        <div class="col-6">${pokemonName} (#${tokenId})</div>
                     </div>
-                `;
-                
-                // Load and display battle history for this tournament
-                const battleHistory = JSON.parse(localStorage.getItem('battleHistory') || '[]');
-                const tournamentBattles = battleHistory.filter(b => 
-                    b.tournamentId === tournamentId || b.tournamentId.startsWith('local_')
-                );
-                
-                if (tournamentBattles.length > 0) {
-                    content.innerHTML += `
-                        <div class="battle-detail-item">
-                            <h6 style="color: var(--warning);">Battle History (${tournamentBattles.length} battles)</h6>
-                            <div class="battle-log-detail">
-                    `;
-                    
-                    tournamentBattles.forEach((battle, index) => {
-                        const battleDate = new Date(battle.timestamp).toLocaleString();
-                        content.innerHTML += `
-                            <div style="margin-bottom: 10px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: 5px;">
-                                <strong>Match ${index + 1}:</strong> ${battle.playerPokemon.name} vs ${battle.opponent.name}<br>
-                                <small style="color: #aaa;">${battleDate} - ${battle.rounds} rounds - Result: ${battle.result.toUpperCase()}</small>
-                            </div>
-                        `;
-                    });
-                    
-                    content.innerHTML += `
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                modal.show();
-                
-            } catch (error) {
-                console.error('Error loading local tournament details:', error);
-                showToast('Error loading tournament details', 'error');
-            }
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Difficulty:</strong></div>
+                        <div class="col-6">${DIFFICULTY_LABELS[difficulty] || difficulty}</div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Final Standing:</strong></div>
+                        <div class="col-6">${wins}/${opponentCount} Wins</div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Total Reward:</strong></div>
+                        <div class="col-6">${finalReward} PKCN</div>
+                    </div>
+                </div>
+                <div class="battle-detail-item">
+                    <h6 style="color: var(--info);">Blockchain Record</h6>
+                    <p style="font-size: 0.9em; color: #aaa;">This tournament is recorded on the blockchain.</p>
+                </div>
+            `;
+            
+            modal.show();
+            
+        } catch (error) {
+            console.error('Error loading tournament details:', error);
+            showToast('Error loading tournament details', 'error');
         }
+    }
 
-        // Claim reward
-        async function claimReward(tournamentId) {
-            if (!tournamentContract) {
-                showToast("Contract not available", "error");
+    // Show local tournament details with battle history
+    function showLocalTournamentDetails(tournamentId) {
+        try {
+            const tournamentHistory = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
+            const tournament = tournamentHistory.find(t => t.tournamentId === tournamentId);
+            
+            if (!tournament) {
+                showToast('Tournament details not found', 'error');
                 return;
             }
             
-            try {
-                showLoading(true, "Claiming reward...");
+            const modal = new bootstrap.Modal(document.getElementById('battleDetailModal'));
+            const content = document.getElementById('battleDetailContent');
+            
+            // FIX: Safe property access
+            const playerPokemon = tournament.playerPokemon || {};
+            const date = new Date(tournament.timestamp || Date.now()).toLocaleString();
+            const wins = tournament.wins || 0;
+            const opponentCount = tournament.opponentCount || 0;
+            const totalReward = tournament.totalReward || 0;
+            const earnings = totalReward - 50;
+            const difficulty = tournament.difficulty || 'normal';
+            
+            content.innerHTML = `
+                <div class="battle-detail-item">
+                    <h6 style="color: var(--primary);">Tournament Summary</h6>
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Date:</strong></div>
+                        <div class="col-6">${date}</div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Pokémon:</strong></div>
+                        <div class="col-6">${playerPokemon.name || 'Unknown'} (#${playerPokemon.tokenId || playerPokemon.id || '0'})</div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Difficulty:</strong></div>
+                        <div class="col-6">${DIFFICULTY_LABELS[difficulty] || difficulty}</div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Final Standing:</strong></div>
+                        <div class="col-6">${wins}/${opponentCount} Wins</div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6"><strong>Total Reward:</strong></div>
+                        <div class="col-6">${totalReward} PKCN</div>
+                    </div>
+                    <div class="row">
+                        <div class="col-6"><strong>Net Earnings:</strong></div>
+                        <div class="col-6" style="color: ${earnings >= 0 ? 'var(--primary)' : 'var(--danger)'}; font-weight: 800;">
+                            ${earnings >= 0 ? '+' : ''}${earnings} PKCN
+                        </div>
+                    </div>
+                </div>
+                <div class="battle-detail-item">
+                    <h6 style="color: var(--info);">Local Record</h6>
+                    <p style="font-size: 0.9em; color: #aaa;">This tournament is stored locally in your browser.</p>
+                </div>
+            `;
+            
+            // Load and display battle history for this tournament
+            const battleHistory = JSON.parse(localStorage.getItem('battleHistory') || '[]');
+            const tournamentBattles = battleHistory.filter(b => 
+                b.tournamentId === tournamentId || b.tournamentId.startsWith('local_')
+            );
+            
+            if (tournamentBattles.length > 0) {
+                content.innerHTML += `
+                    <div class="battle-detail-item">
+                        <h6 style="color: var(--warning);">Battle History (${tournamentBattles.length} battles)</h6>
+                        <div class="battle-log-detail">
+                `;
                 
-                const tx = await tournamentContract.claimReward(tournamentId);
-                showToast("Transaction sent...", "info");
-                
-                const receipt = await tx.wait();
-                
-                if (receipt.status === 1) {
-                    showToast("✅ Reward claimed successfully!", "success");
-                    // Reload data
-                    await loadProfileData();
-                    await updateBalance();
-                } else {
-                    showToast("Claim transaction failed", "error");
-                }
-                
-            } catch (error) {
-                console.error('Error claiming reward:', error);
-                showToast(`Claim failed: ${error.message}`, "error");
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        // Connect wallet manually (from navbar button)
-        async function connectWallet() {
-            try {
-                // If already connected, do nothing
-                if (currentAccount) {
-                    showToast("Wallet already connected", "info");
-                    return;
-                }
-                
-                const accounts = await window.ethereum.request({
-                    method: 'eth_requestAccounts'
+                tournamentBattles.forEach((battle, index) => {
+                    const battleDate = new Date(battle.timestamp).toLocaleString();
+                    content.innerHTML += `
+                        <div style="margin-bottom: 10px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: 5px;">
+                            <strong>Match ${index + 1}:</strong> ${battle.playerPokemon.name} vs ${battle.opponent.name}<br>
+                            <small style="color: #aaa;">${battleDate} - ${battle.rounds} rounds - Result: ${battle.result.toUpperCase()}</small>
+                        </div>
+                    `;
                 });
                 
-                if (accounts.length > 0) {
-                    currentAccount = accounts[0];
-                    isConnected = true;
-                    sessionStorage.setItem('connectedAccount', currentAccount);
-                    
-                    // Update global state if wallet.js exists
-                    if (typeof window.updateWalletDisplay === 'function') {
-                        window.updateWalletDisplay(currentAccount);
-                    }
-                    
-                    await connectProfile();
+                content.innerHTML += `
+                        </div>
+                    </div>
+                `;
+            }
+            
+            modal.show();
+            
+        } catch (error) {
+            console.error('Error loading local tournament details:', error);
+            showToast('Error loading tournament details', 'error');
+        }
+    }
+
+    // Claim blockchain reward
+    // Claim blockchain reward
+async function claimReward(tournamentId) {
+    if (!tournamentContract) {
+        showToast("Contract not available", "error");
+        return;
+    }
+    
+    try {
+        showLoading(true, "Claiming reward...");
+        
+        // First, verify the reward is still claimable
+        let tournamentData;
+        try {
+            tournamentData = await tournamentContract.getTournamentData(tournamentId);
+            const isClaimed = tournamentData[6]; // Check if already claimed
+            
+            if (isClaimed) {
+                showToast("Reward already claimed", "warning");
+                // Clean up local storage
+                cleanupLocalReward(tournamentId);
+                await loadProfileData();
+                return;
+            }
+        } catch (error) {
+            console.warn('Could not verify tournament status:', error);
+        }
+        
+        // Claim the reward
+        const tx = await tournamentContract.claimReward(tournamentId);
+        showToast("Transaction sent...", "info");
+        
+        const receipt = await tx.wait();
+        
+        if (receipt.status === 1) {
+            showToast("✅ Reward claimed successfully!", "success");
+            
+            // IMPORTANT: Force refresh all data
+            await Promise.all([
+                cleanupLocalReward(tournamentId),
+                updateBalance(),
+                loadUnclaimedRewards(), // Direct call to refresh unclaimed
+                loadTournamentHistory() // Refresh history
+            ]);
+            
+            // Clear the grid and reload
+            document.getElementById('unclaimedRewardsGrid').innerHTML = '';
+            await loadUnclaimedRewards();
+            
+        } else {
+            showToast("Claim transaction failed", "error");
+        }
+        
+    } catch (error) {
+        console.error('Error claiming reward:', error);
+        
+        // Handle specific errors
+        if (error.message.includes("already claimed") || 
+            error.message.includes("No reward to claim") ||
+            error.message.includes("Reward already claimed")) {
+            showToast("Reward already claimed", "warning");
+            cleanupLocalReward(tournamentId);
+            await loadProfileData();
+        } else if (error.message.includes("user rejected")) {
+            showToast("Transaction rejected by user", "error");
+        } else {
+            showToast(`Claim failed: ${error.message}`, "error");
+        }
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Helper function to clean up local reward data
+function cleanupLocalReward(tournamentId) {
+    try {
+        // Remove from unclaimedRewardsLocal
+        let unclaimed = JSON.parse(localStorage.getItem('unclaimedRewardsLocal') || '[]');
+        const beforeLength = unclaimed.length;
+        unclaimed = unclaimed.filter(u => u.tournamentId !== tournamentId);
+        const afterLength = unclaimed.length;
+        
+        if (beforeLength !== afterLength) {
+            localStorage.setItem('unclaimedRewardsLocal', JSON.stringify(unclaimed));
+            console.log(`Removed ${beforeLength - afterLength} items from unclaimedRewardsLocal`);
+        }
+        
+        // Also clean battleHistory for this tournament
+        let battleHistory = JSON.parse(localStorage.getItem('battleHistory') || '[]');
+        battleHistory = battleHistory.filter(b => !b.tournamentId || !b.tournamentId.includes(tournamentId));
+        localStorage.setItem('battleHistory', JSON.stringify(battleHistory));
+        
+        return true;
+    } catch (error) {
+        console.error('Error cleaning up local reward:', error);
+        return false;
+    }
+}
+
+    // Connect wallet manually (from navbar button)
+    async function connectWallet() {
+        try {
+            // If already connected, do nothing
+            if (currentAccount) {
+                showToast("Wallet already connected", "info");
+                return;
+            }
+            
+            const accounts = await window.ethereum.request({
+                method: 'eth_requestAccounts'
+            });
+            
+            if (accounts.length > 0) {
+                currentAccount = accounts[0];
+                isConnected = true;
+                sessionStorage.setItem('connectedAccount', currentAccount);
+                
+                // Update global state if wallet.js exists
+                if (typeof window.updateWalletDisplay === 'function') {
+                    window.updateWalletDisplay(currentAccount);
                 }
                 
-            } catch (error) {
-                console.error('Wallet connection error:', error);
-                showToast(`Connection failed: ${error.message}`, "error");
-            }
-        }
-
-        // Show connection prompt
-        function showConnectionPrompt() {
-            document.getElementById('connectionStatus').style.display = 'block';
-            document.getElementById('unclaimedSection').style.display = 'none';
-            document.getElementById('historySection').style.display = 'none';
-            document.getElementById('loadingState').style.display = 'none';
-        }
-
-        // Display wallet address
-        function displayWalletAddress(address) {
-            const displayAddress = address.substring(0, 8) + '...' + address.substring(36);
-            document.getElementById('walletAddress').textContent = displayAddress;
-            document.getElementById('walletAddress').title = address;
-        }
-
-        // Show/hide loading
-        function showLoading(show, message = "Loading your profile data...") {
-            const loading = document.getElementById('loadingState');
-            if (loading) {
-                loading.style.display = show ? 'block' : 'none';
-                if (show && message) {
-                    loading.querySelector('p').textContent = message;
-                }
+                await connectProfile();
             }
             
-            if (!show) {
-                document.getElementById('unclaimedSection').style.display = 'block';
-                document.getElementById('historySection').style.display = 'block';
+        } catch (error) {
+            console.error('Wallet connection error:', error);
+            showToast(`Connection failed: ${error.message}`, "error");
+        }
+    }
+
+    // Show connection prompt
+    function showConnectionPrompt() {
+        document.getElementById('connectionStatus').style.display = 'block';
+        document.getElementById('unclaimedSection').style.display = 'none';
+        document.getElementById('historySection').style.display = 'none';
+        document.getElementById('loadingState').style.display = 'none';
+    }
+
+    // Display wallet address
+    function displayWalletAddress(address) {
+        const displayAddress = address.substring(0, 8) + '...' + address.substring(36);
+        document.getElementById('walletAddress').textContent = displayAddress;
+        document.getElementById('walletAddress').title = address;
+    }
+
+    // Show/hide loading
+    function showLoading(show, message = "Loading your profile data...") {
+        const loading = document.getElementById('loadingState');
+        if (loading) {
+            loading.style.display = show ? 'block' : 'none';
+            if (show && message) {
+                loading.querySelector('p').textContent = message;
             }
         }
+        
+        if (!show) {
+            document.getElementById('unclaimedSection').style.display = 'block';
+            document.getElementById('historySection').style.display = 'block';
+        }
+    }
 
-        // Show toast notification
-        function showToast(message, type = "success") {
-            const toast = document.getElementById('toastNotification');
-            const toastMessage = document.getElementById('toastMessage');
-            
-            if (!toast || !toastMessage) return;
-            
-            toastMessage.textContent = message;
-            
-            if (type === "error") {
-                toast.style.borderColor = "#ff4444";
-                toastMessage.style.color = "#ff4444";
-            } else if (type === "info") {
-                toast.style.borderColor = "#00a8ff";
-                toastMessage.style.color = "#00a8ff";
+    // Show toast notification
+    function showToast(message, type = "success") {
+        const toast = document.getElementById('toastNotification');
+        const toastMessage = document.getElementById('toastMessage');
+        
+        if (!toast || !toastMessage) return;
+        
+        toastMessage.textContent = message;
+        
+        if (type === "error") {
+            toast.style.borderColor = "#ff4444";
+            toastMessage.style.color = "#ff4444";
+        } else if (type === "info") {
+            toast.style.borderColor = "#00a8ff";
+            toastMessage.style.color = "#00a8ff";
+        } else {
+            toast.style.borderColor = "#00ff9d";
+            toastMessage.style.color = "#00ff9d";
+        }
+        
+        toast.style.display = 'block';
+        
+        setTimeout(() => {
+            toast.style.display = 'none';
+        }, 3000);
+    }
+
+    // Show error
+    function showError(message) {
+        showToast(message, "error");
+    }
+
+    // Listen for account changes
+    if (window.ethereum) {
+        window.ethereum.on('accountsChanged', async (accounts) => {
+            if (accounts.length > 0) {
+                currentAccount = accounts[0];
+                sessionStorage.setItem('connectedAccount', currentAccount);
+                updateNavbarButton(currentAccount);
+                await loadProfileData();
             } else {
-                toast.style.borderColor = "#00ff9d";
-                toastMessage.style.color = "#00ff9d";
+                // Wallet disconnected
+                currentAccount = null;
+                isConnected = false;
+                sessionStorage.removeItem('connectedAccount');
+                updateNavbarButton(null);
+                showConnectionPrompt();
             }
-            
-            toast.style.display = 'block';
-            
-            setTimeout(() => {
-                toast.style.display = 'none';
-            }, 3000);
-        }
+        });
+        
+        // Listen for chain changes
+        window.ethereum.on('chainChanged', () => {
+            window.location.reload();
+        });
+    }
+</script>
 
-        // Show error
-        function showError(message) {
-            showToast(message, "error");
-        }
 
-        // Listen for account changes
-        if (window.ethereum) {
-            window.ethereum.on('accountsChanged', async (accounts) => {
-                if (accounts.length > 0) {
-                    currentAccount = accounts[0];
-                    sessionStorage.setItem('connectedAccount', currentAccount);
-                    updateNavbarButton(currentAccount);
-                    await loadProfileData();
-                } else {
-                    // Wallet disconnected
-                    currentAccount = null;
-                    isConnected = false;
-                    sessionStorage.removeItem('connectedAccount');
-                    updateNavbarButton(null);
-                    showConnectionPrompt();
-                }
-            });
-            
-            // Listen for chain changes
-            window.ethereum.on('chainChanged', () => {
-                window.location.reload();
-            });
-        }
-    </script>
 </body>
 </html>
