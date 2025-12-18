@@ -6,14 +6,14 @@ window.CONTRACTS = {
   PKCN: "0x8D38B8F5C1b7ed7f13BF5c46be31272ffD2AE6Ce",
   MARKETPLACE: "0xf846D560F06a2D32fc550c8b5Ce593729B0a055D",
   POKEMON_NFT: "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B",
-  TOURNAMENT: "0xE1B32A36cfEf94145fAC1bEDDAD5B01D5eCd2457",
+  TOURNAMENT: "0x99Fd2526e8b6FD2ea8cbC14DeC805749e956b955",
   NFT_LOCK_GUARD: "0xe1C2ea707fBE1F1b59E5f4C045c81D2c53C8d43D",
   
   // Collection/Marketplace expect these (with suffix)
   PKCN_ADDRESS: "0x8D38B8F5C1b7ed7f13BF5c46be31272ffD2AE6Ce",
   MARKETPLACE_ADDRESS: "0xf846D560F06a2D32fc550c8b5Ce593729B0a055D",
   POKEMON_NFT_ADDRESS: "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B",
-  TOURNAMENT_ADDRESS: "0xE1B32A36cfEf94145fAC1bEDDAD5B01D5eCd2457",
+  TOURNAMENT_ADDRESS: "0x99Fd2526e8b6FD2ea8cbC14DeC805749e956b955",
   NFT_LOCK_GUARD_ADDRESS: "0xe1C2ea707fBE1F1b59E5f4C045c81D2c53C8d43D" 
 };
 
@@ -91,7 +91,13 @@ TOURNAMENT: [
   "event RewardClaimed(string indexed tournamentId, address indexed player, uint256 reward)",
   "event TournamentExpired(string indexed tournamentId, address indexed player)",
   "event NFTUnlocked(uint256 indexed tokenId, address indexed player)",
-  "event PlayerCleared(address indexed player)"
+  "event PlayerCleared(address indexed player)",
+
+   "function claimAirdrop() external",
+    "function airdropToUser(address user) external",
+    "function isEligibleForAirdrop(address user) external view returns (bool)",
+    "function hasClaimedAirdrop(address user) external view returns (bool)",
+    "event AirdropClaimed(address indexed user, uint256 amount)"
 ],
   
   // NFT_LOCK_GUARD ABI
