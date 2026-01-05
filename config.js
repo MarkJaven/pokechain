@@ -1,3 +1,16 @@
+window.SUPABASE_CONFIG = {
+  url: 'https://clvfdatsqircuahjxasi.supabase.co',      
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNsdmZkYXRzcWlyY3VhaGp4YXNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczMzEwODksImV4cCI6MjA4MjkwNzA4OX0.yXZbK25Vmh2hpL40UR7trRVQfuklVNH0h2asUFv39lc'     
+};
+
+// Initialize Supabase client
+if (typeof window.supabase !== 'undefined') {
+  window.supabaseClient = window.supabase.createClient(
+    window.SUPABASE_CONFIG.url,
+    window.SUPABASE_CONFIG.anonKey
+  );
+}
+
 // =========================================
 // CONTRACT ADDRESSES - WORKS FOR ALL PAGES
 // =========================================
@@ -6,14 +19,14 @@ window.CONTRACTS = {
   PKCN: "0x8D38B8F5C1b7ed7f13BF5c46be31272ffD2AE6Ce",
   MARKETPLACE: "0xf846D560F06a2D32fc550c8b5Ce593729B0a055D",
   POKEMON_NFT: "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B",
-  TOURNAMENT: "0x99Fd2526e8b6FD2ea8cbC14DeC805749e956b955",
+  TOURNAMENT: "0x41096C94a806C4Ca3AE78871BDBF9AE69AD28dE8",
   NFT_LOCK_GUARD: "0xe1C2ea707fBE1F1b59E5f4C045c81D2c53C8d43D",
   
   // Collection/Marketplace expect these (with suffix)
   PKCN_ADDRESS: "0x8D38B8F5C1b7ed7f13BF5c46be31272ffD2AE6Ce",
   MARKETPLACE_ADDRESS: "0xf846D560F06a2D32fc550c8b5Ce593729B0a055D",
   POKEMON_NFT_ADDRESS: "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B",
-  TOURNAMENT_ADDRESS: "0x99Fd2526e8b6FD2ea8cbC14DeC805749e956b955",
+  TOURNAMENT_ADDRESS: "0x41096C94a806C4Ca3AE78871BDBF9AE69AD28dE8",
   NFT_LOCK_GUARD_ADDRESS: "0xe1C2ea707fBE1F1b59E5f4C045c81D2c53C8d43D" 
 };
 
@@ -97,7 +110,20 @@ TOURNAMENT: [
     "function airdropToUser(address user) external",
     "function isEligibleForAirdrop(address user) external view returns (bool)",
     "function hasClaimedAirdrop(address user) external view returns (bool)",
-    "event AirdropClaimed(address indexed user, uint256 amount)"
+    "event AirdropClaimed(address indexed user, uint256 amount)",
+
+    "function createPvPMatch(string matchId, address player1, address player2, uint256 tokenId1, uint256 tokenId2) external",
+    "function completePvPMatch(string matchId, address winner) external",
+    "function claimPvPReward(string matchId) external",
+    "function expirePvPMatch(string matchId) external",
+    "function getPvPMatchData(string matchId) external view returns (tuple(string matchId, address player1, address player2, uint256 player1TokenId, uint256 player2TokenId, uint256 stakeAmount, address winner, bool isComplete, bool rewardClaimed, uint256 startBlock))",
+    "function isNFTLockedInPvP(uint256 tokenId) external view returns (bool)",
+    "function getActivePvPMatch(address player) external view returns (string)",
+    "function canJoinPvP(address player, uint256 tokenId) external view returns (bool, string)",
+    
+    "event PvPMatchCreated(string indexed matchId, address player1, address player2, uint256 totalStake)",
+    "event PvPMatchCompleted(string indexed matchId, address winner, uint256 reward)",
+    "event PvPRewardClaimed(string indexed matchId, address winner, uint256 amount)"
 ],
   
   // NFT_LOCK_GUARD ABI
