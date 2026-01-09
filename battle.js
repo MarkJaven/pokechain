@@ -14,6 +14,165 @@ const gameState = {
   tournamentId: null
 };
 
+// ===================================================================
+// PVP MODE INTEGRATION
+// ===================================================================
+
+function isPvPMode() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('mode') === 'pvp';
+}
+
+function getPvPParams() {
+    if (!isPvPMode()) return null;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    return {
+        roomId: urlParams.get('roomId'),
+        betAmount: urlParams.get('betAmount'),
+        players: JSON.parse(decodeURIComponent(urlParams.get('players')))
+    };
+}
+
+async function startPvPBattle() {
+    const pvpParams = getPvPParams();
+    if (!pvpParams) {
+        console.error('❌ No PvP parameters found');
+        window.location.href = 'pvp-lobby.html';
+        return;
+    }
+
+    console.log('🎮 Starting PvP Battle:', pvpParams);
+    
+    // Hide tournament UI elements
+    UI.difficulty.style.display = 'none';
+    document.querySelector('.match-counter').style.display = 'none';
+    UI.standings.parentElement.style.display = 'none';
+    
+    // Show PvP info
+    const pvpInfo = document.createElement('div');
+    pvpInfo.className = 'pvp-battle-info';
+    pvpInfo.innerHTML = `
+        <div style="position: absolute; top: 10px; right: 20px; background: rgba(255, 217, 61, 0.2); 
+                    border: 2px solid var(--warning); border-radius: 10px; padding: 10px 20px;">
+            <div style="font-weight: 800; color: var(--warning);">⚔️ PvP BATTLE</div>
+            <div style="font-size: 0.9rem; color: white;">Bet: ${pvpParams.betAmount} PKCN</div>
+        </div>
+    `;
+    UI.arena.parentElement.appendChild(pvpInfo);
+
+    // Find our Pokemon and opponent's Pokemon
+    const myPlayer = pvpParams.players.find(p => p.player_address === window.wallet.getAccount().toLowerCase());
+    const opponentPlayer = pvpParams.players.find(p => p.player_address !== window.wallet.getAccount().toLowerCase());
+
+    if (!myPlayer || !opponentPlayer) {
+        console.error('❌ Could not find players in PvP params');
+        window.location.href = 'pvp-lobby.html';
+        return;
+    }
+
+    // Initialize PvP battle
+    const matchData = {
+        match_id: pvpParams.roomId,
+        player1_address: pvpParams.players[0].player_address,
+        player2_address: pvpParams.players[1].player_address,
+        player1_pokemon: pvpParams.players[0].pokemon_data,
+        player2_pokemon: pvpParams.players[1].pokemon_data,
+        battle_seed: `${pvpParams.roomId}_${Date.now()}`
+    };
+
+    // Initialize PvP battle engine
+    window.PvPBattle.init(matchData, window.wallet.getAccount(), pvpState.supabaseClient);
+    
+    // Create battle state for UI
+    gameState.currentBattle = {
+        p1: createBattlePokemon(myPlayer.pokemon_data, true),
+        p2: createBattlePokemon(opponentPlayer.pokemon_data, false),
+        turn: null,
+        round: 1,
+        actionsThisRound: 0,
+        defending: null
+    };
+
+    // Set turn order by speed
+    gameState.currentBattle.turn = determineFirstAttacker(gameState.currentBattle.p1, gameState.currentBattle.p2);
+    
+    renderBattle();
+    executeTurn();
+}
+
+// Override endTournament for PvP
+async function endTournament() {
+    if (isPvPMode()) {
+        await endPvPBattle();
+        return;
+    }
+    
+    // Original tournament logic
+    await endTournament();
+}
+
+async function endPvPBattle() {
+    const pvpParams = getPvPParams();
+    if (!pvpParams) return;
+
+    gameState.isComplete = true;
+    gameState.battleActive = false;
+
+    const { p1, p2 } = gameState.currentBattle;
+    const winner = p1.currentHp > 0 ? p1 : p2;
+    
+    console.log('🏆 PvP Battle ended. Winner:', winner.name);
+
+    // Show result screen
+    UI.resultTitle.textContent = winner.isPlayer ? 'VICTORY!' : 'DEFEAT';
+    UI.resultMessage.innerHTML = `
+        ${winner.isPlayer ? '🎉 You won the PvP battle!' : '💔 You lost the battle.'}<br><br>
+        Bet Amount: ${pvpParams.betAmount} PKCN<br>
+        ${winner.isPlayer ? `You won ${pvpParams.betAmount * 2} PKCN!` : 'Better luck next time!'}
+    `;
+    UI.resultScreen.querySelector('.result-content').className = `result-content ${winner.isPlayer ? 'victory' : 'defeat'}`;
+    UI.resultScreen.classList.remove('hidden');
+
+    if (winner.isPlayer) {
+        // Claim reward
+        try {
+            const provider = await safeGetProvider();
+            const signer = await provider.getSigner();
+            const tournamentContract = new ethers.Contract(
+                window.CONTRACTS.TOURNAMENT,
+                window.ABIS.TOURNAMENT,
+                signer
+            );
+
+            UI.resultMessage.innerHTML += '<br><br>Claiming reward...';
+            
+            const claimTx = await tournamentContract.claimPvPReward(pvpParams.roomId);
+            await claimTx.wait();
+            
+            UI.resultMessage.innerHTML += '<br>✅ Reward claimed!';
+            await updateBalanceDisplay();
+
+        } catch (error) {
+            console.error('❌ Failed to claim reward:', error);
+            UI.resultMessage.innerHTML += '<br>⚠️ Failed to claim reward automatically. Check your profile.';
+        }
+    }
+
+    // Clean up room
+    try {
+        // Could delete room here or mark as completed
+        console.log('✅ PvP battle completed');
+    } catch (error) {
+        console.warn('⚠️ Room cleanup failed:', error);
+    }
+
+    const returnBtn = document.getElementById('returnBtn');
+    returnBtn.onclick = () => {
+        window.location.href = 'pvp-lobby.html';
+    };
+}
+
 const UI = {
   player: {
     sprite: document.getElementById('playerSprite'),

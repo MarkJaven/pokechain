@@ -147,14 +147,14 @@ function setupEventListeners() {
         tournamentState.difficulty = e.target.value;
     });
     
-    elements.startBtn.addEventListener('click', () => {
-        if (!tournamentState.selectedPokemon) {
-            elements.startError.style.display = 'block';
-            elements.startError.textContent = '⚠️ Please select a Pokémon first!';
-            return;
-        }
-        showTournamentModal();
-    });
+    // elements.startBtn.addEventListener('click', () => {
+    //     if (!tournamentState.selectedPokemon) {
+    //         elements.startError.style.display = 'block';
+    //         elements.startError.textContent = '⚠️ Please select a Pokémon first!';
+    //         return;
+    //     }
+    //     showTournamentModal();
+    // });
     
     elements.confirmBtn.addEventListener('click', async () => {
         await confirmAndStartTournament();

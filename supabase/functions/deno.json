@@ -1,0 +1,16 @@
+{
+  "imports": {
+    "ethers": "npm:ethers@6.7.0",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2"
+  },
+  "lint": {
+    "files": {
+      "include": ["."]
+    }
+  },
+  "fmt": {
+    "files": {
+      "include": ["."]
+    }
+  }
+}
