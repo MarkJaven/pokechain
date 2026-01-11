@@ -8,6 +8,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="collection-marketplace.css" />
   <link rel="stylesheet" href="tournament.css" />
+  <link rel="stylesheet" href="transaction-modal.css" />
   <style>
     .pvp-lobby-container {
       display: grid;
@@ -67,12 +68,6 @@
       margin-bottom: 10px;
     }
 
-    .room-bet {
-      font-size: 1.2rem;
-      font-weight: 800;
-      color: var(--warning);
-    }
-
     .room-status {
       padding: 5px 12px;
       border-radius: 20px;
@@ -83,6 +78,16 @@
     .status-waiting {
       background: rgba(255, 217, 61, 0.3);
       color: var(--warning);
+    }
+
+    .status-ready {
+      background: rgba(0, 255, 157, 0.3);
+      color: var(--primary);
+    }
+
+    .status-battling {
+      background: rgba(255, 59, 59, 0.3);
+      color: var(--danger);
     }
 
     .status-accepted {
@@ -251,12 +256,6 @@
           </div>
         </div>
 
-        <!-- Bet Amount -->
-        <div class="tournament-option" style="margin-bottom: 15px;">
-          <label for="betAmount">Bet Amount (PKCN)</label>
-          <input type="number" id="betAmount" class="tournament-select" value="250" min="50" max="1000" step="50">
-        </div>
-
         <button id="createRoomBtn" class="btn btn-success" style="width: 100%;" disabled>
           CREATE ROOM
         </button>
@@ -283,6 +282,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
   <script src="./config.js"></script>
   <script src="./wallet.js"></script>
+  <script src="./transaction-modal.js"></script>
   <script src="pvp-lobby.js"></script>
 </body>
 </html>

@@ -1686,6 +1686,12 @@ async function handleFaint(faintedPokemon) {
   // Wait for animation
   await new Promise(resolve => setTimeout(resolve, 800));
   
+  if (isPvPMode()) {
+      // PvP mode - use post-battle payment
+      await endPvPBattle();
+      return; // Don't continue to next match
+  }
+  
   const { p1, p2 } = gameState.currentBattle;
   const winner = faintedPokemon === p1 ? p2 : p1;
   
@@ -1986,6 +1992,84 @@ function getTypeColor(moveType) {
     normal: '#ffffff'
   };
   return colors[moveType] || '#ffffff';
+}
+
+// ===================================================================
+// ADD THIS TO battle.js - PvP Post-Battle Payment Integration
+// ===================================================================
+
+async function endPvPBattle() {
+    const pvpParams = getPvPParams();
+    if (!pvpParams) return;
+
+    gameState.isComplete = true;
+    gameState.battleActive = false;
+
+    const { p1, p2 } = gameState.currentBattle;
+    const winner = p1.currentHp > 0 ? p1 : p2;
+    const loser = p1.currentHp > 0 ? p2 : p1;
+    
+    console.log('🏆 PvP Battle ended. Winner:', winner.name);
+
+    // Find winner and loser addresses
+    const winnerPlayer = pvpParams.players.find(p => 
+        p.pokemon_data.tokenId === winner.tokenId
+    );
+    const loserPlayer = pvpParams.players.find(p => 
+        p.pokemon_data.tokenId === loser.tokenId
+    );
+
+    if (!winnerPlayer || !loserPlayer) {
+        console.error('❌ Could not find player data');
+        return;
+    }
+
+    // Show result screen
+    UI.resultTitle.textContent = winner.isPlayer ? 'VICTORY!' : 'DEFEAT';
+    UI.resultMessage.innerHTML = `
+        ${winner.isPlayer ? '🎉 You won the PvP battle!' : '💔 You lost the battle.'}<br><br>
+        Bet Amount: ${pvpParams.betAmount} PKCN<br>
+        ${winner.isPlayer ? 
+            `<span style="color: #00ff9d;">Waiting for opponent to pay...</span>` : 
+            `<span style="color: #ff3b3b;">You must pay your debt!</span>`
+        }
+    `;
+    UI.resultScreen.querySelector('.result-content').className = `result-content ${winner.isPlayer ? 'victory' : 'defeat'}`;
+    UI.resultScreen.classList.remove('hidden');
+
+    // Update Supabase with battle result
+    try {
+        const supabaseClient = window.supabase.createClient(
+            window.SUPABASE_CONFIG.url,
+            window.SUPABASE_CONFIG.anonKey
+        );
+
+        await supabaseClient
+            .from('pvp_rooms')
+            .update({ 
+                status: 'payment_pending',
+                winner_address: winnerPlayer.player_address,
+                loser_address: loserPlayer.player_address,
+                battle_completed_at: new Date().toISOString()
+            })
+            .eq('room_id', pvpParams.roomId);
+
+    } catch (error) {
+        console.error('❌ Failed to update battle result:', error);
+    }
+
+    // Redirect after 3 seconds
+    setTimeout(() => {
+        const myAddress = window.wallet.getAccount().toLowerCase();
+        
+        if (myAddress === loserPlayer.player_address.toLowerCase()) {
+            // Loser → Payment page (can't escape!)
+            window.location.href = `pvp-payment.html?roomId=${pvpParams.roomId}&amount=${pvpParams.betAmount}`;
+        } else {
+            // Winner → Waiting page
+            window.location.href = `pvp-waiting.html?roomId=${pvpParams.roomId}&amount=${pvpParams.betAmount}`;
+        }
+    }, 3000);
 }
 
 // Add missing CSS

@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PvP Battle Arena</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #00ff9d;
+      --danger: #ff3b3b;
+      --warning: #ffd93d;
+      --info: #00c4ff;
+      --glass: rgba(20, 20, 30, 0.85);
+      --dark: #000000;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Orbitron', sans-serif;
+      background: #000000;
+      color: white;
+      overflow: hidden;
+      min-height: 100vh;
+    }
+
+    .bg-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: radial-gradient(ellipse at 30% 30%, rgba(0, 255, 157, 0.08) 0%, transparent 50%),
+                  radial-gradient(ellipse at 70% 70%, rgba(255, 59, 59, 0.08) 0%, transparent 50%),
+                  radial-gradient(circle at center, #1a1a2e 0%, #000000 100%);
+      z-index: -1;
+    }
+
+    /* Header */
+    .pvp-header {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 15px 25px;
+      background: var(--glass);
+      border-bottom: 2px solid var(--primary);
+      backdrop-filter: blur(10px);
+    }
+
+    .pvp-title {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--primary);
+      text-shadow: 0 0 20px rgba(0, 255, 157, 0.8);
+    }
+
+    /* Battle Arena */
+    .battle-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      min-height: calc(100vh - 70px);
+    }
+
+    .battle-arena {
+      position: relative;
+      width: 800px;
+      height: 550px;
+      background-image: url('images/battle-bg.jpg');
+      background-size: cover;
+      background-position: center;
+      border: 3px solid var(--primary);
+      border-radius: 15px;
+      box-shadow: 0 0 30px rgba(0, 255, 157, 0.4);
+      overflow: hidden;
+    }
+
+    .vs-indicator {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 3rem;
+      font-weight: 900;
+      color: var(--primary);
+      text-shadow: 0 0 20px rgba(0, 255, 157, 1);
+      animation: pulse 2s infinite;
+      z-index: 10;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-50%, -50%) scale(1.1); }
+    }
+
+    /* Pokemon Positioning */
+    .pokemon-wrapper {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .player-pokemon {
+      bottom: 20px;
+      left: 80px;
+    }
+
+    .enemy-pokemon {
+      top: 60px;
+      right: 80px;
+    }
+
+    .sprite-container {
+      width: 200px;
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.15) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .pokemon-sprite {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+    }
+
+    /* Pokemon HUD */
+    .pokemon-hud {
+      width: 240px;
+      background: var(--glass);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      padding: 12px 14px;
+      backdrop-filter: blur(10px);
+    }
+
+    .pokemon-name {
+      font-size: 1rem;
+      font-weight: 800;
+      text-align: center;
+      margin-bottom: 8px;
+      text-transform: capitalize;
+      text-shadow: 0 0 10px rgba(0, 255, 157, 0.6);
+    }
+
+    .hp-bar {
+      position: relative;
+      height: 24px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+    }
+
+    .hp-fill {
+      height: 100%;
+      width: 100%;
+      transition: width 0.8s ease;
+      background: linear-gradient(90deg, #00ff9d, #00c474);
+      box-shadow: 0 0 12px rgba(0, 255, 157, 0.6);
+    }
+
+    .hp-text {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-shadow: 0 0 8px rgba(0, 0, 0, 0.9);
+    }
+
+    /* Action Panel */
+    .action-panel {
+      margin-top: 20px;
+      width: 800px;
+      background: var(--glass);
+      border: 2px solid rgba(0, 255, 157, 0.4);
+      border-radius: 12px;
+      padding: 20px;
+      backdrop-filter: blur(10px);
+      display: flex;
+      gap: 15px;
+    }
+
+    .action-panel.hidden {
+      display: none;
+    }
+
+    .ability-grid {
+      display: flex;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .ability-btn {
+      flex: 1;
+      padding: 15px;
+      background: linear-gradient(180deg, rgba(255, 215, 0, 0.15), rgba(200, 170, 0, 0.25));
+      border: 2px solid rgba(255, 215, 0, 0.6);
+      border-radius: 10px;
+      color: white;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.25s;
+      font-size: 0.85rem;
+      text-align: center;
+    }
+
+    .ability-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(255, 217, 61, 0.6);
+    }
+
+    .defend-btn {
+      width: 200px;
+      padding: 15px;
+      background: linear-gradient(180deg, rgba(107, 207, 127, 0.15), rgba(80, 180, 100, 0.25));
+      border: 2px solid #6bcf7f;
+      border-radius: 10px;
+      color: white;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.25s;
+      font-size: 0.9rem;
+    }
+
+    .defend-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(107, 207, 127, 0.6);
+    }
+
+    /* Result Screen */
+    .result-screen {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      backdrop-filter: blur(5px);
+    }
+
+    .result-screen.hidden { display: none; }
+
+    .result-content {
+      text-align: center;
+      background: var(--glass);
+      border: 3px solid var(--primary);
+      border-radius: 20px;
+      padding: 50px;
+      max-width: 500px;
+      backdrop-filter: blur(10px);
+    }
+
+    .result-content h1 {
+      font-size: 2.5rem;
+      font-weight: 900;
+      margin-bottom: 20px;
+      text-shadow: 0 0 25px currentColor;
+    }
+
+    .result-content.victory h1 { color: var(--primary); }
+    .result-content.defeat h1 { color: var(--danger); }
+
+    /* Damage Numbers */
+    .damage-number {
+      position: absolute;
+      font-weight: 900;
+      font-size: 2.5rem;
+      pointer-events: none;
+      animation: damageFloat 1.5s ease-out forwards;
+      z-index: 100;
+      text-shadow: 0 0 15px currentColor, 2px 2px 4px rgba(0, 0, 0, 0.9);
+    }
+
+    @keyframes damageFloat {
+      0% { opacity: 1; transform: translateY(0) scale(0.7); }
+      50% { opacity: 1; transform: translateY(-40px) scale(1.3); }
+      100% { opacity: 0; transform: translateY(-80px) scale(1); }
+    }
+
+    /* Animations */
+    .hit-flinch {
+      animation: hitFlinch 0.4s ease-out;
+    }
+
+    @keyframes hitFlinch {
+      0% { transform: translateX(0) scale(1); }
+      30% { transform: translateX(-15px) scale(0.95); }
+      60% { transform: translateX(10px) scale(1.05); }
+      100% { transform: translateX(0) scale(1); }
+    }
+
+    .fainted .pokemon-sprite {
+      filter: grayscale(1) brightness(0.4);
+      opacity: 0.35;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .battle-arena { width: 100%; height: 450px; }
+      .action-panel { width: 100%; flex-direction: column; }
+      .ability-grid { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-overlay"></div>
+
+  <!-- Header -->
+  <header class="pvp-header">
+    <div class="pvp-title">⚔️ PVP BATTLE ARENA</div>
+  </header>
+
+  <!-- Battle Container -->
+  <div class="battle-container">
+    <!-- Battle Arena -->
+    <div class="battle-arena" id="battleArena">
+      <div class="vs-indicator">VS</div>
+
+      <!-- Enemy Pokemon -->
+      <div class="pokemon-wrapper enemy-pokemon" id="enemyWrapper">
+        <div class="pokemon-hud">
+          <div class="pokemon-name" id="enemyName">---</div>
+          <div class="hp-bar">
+            <div class="hp-fill" id="enemyHpFill"></div>
+            <div class="hp-text" id="enemyHpText">HP</div>
+          </div>
+        </div>
+        <div class="sprite-container">
+          <img id="enemySprite" class="pokemon-sprite" src="" alt="Enemy Pokemon" />
+        </div>
+      </div>
+
+      <!-- Player Pokemon -->
+      <div class="pokemon-wrapper player-pokemon" id="playerWrapper">
+        <div class="pokemon-hud">
+          <div class="pokemon-name" id="playerName">---</div>
+          <div class="hp-bar">
+            <div class="hp-fill" id="playerHpFill"></div>
+            <div class="hp-text" id="playerHpText">HP</div>
+          </div>
+        </div>
+        <div class="sprite-container">
+          <img id="playerSprite" class="pokemon-sprite" src="" alt="Your Pokemon" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Panel -->
+    <div id="actionPanel" class="action-panel hidden">
+      <div class="ability-grid" id="abilityButtons"></div>
+      <button id="defendBtn" class="defend-btn">DEFEND</button>
+    </div>
+  </div>
+
+  <!-- Result Screen -->
+  <div id="resultScreen" class="result-screen hidden">
+    <div class="result-content">
+      <h1 id="resultTitle">BATTLE COMPLETE</h1>
+      <p id="resultMessage">---</p>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+  <script src="./config.js"></script>
+  <script src="./wallet.js"></script>
+  <script src="battle-pvp.js"></script>
+</body>
+</html>

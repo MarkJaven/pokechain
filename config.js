@@ -1,10 +1,11 @@
 window.SUPABASE_CONFIG = {
-  url: 'https://olfbrpbovqmqaaoljznm.supabase.co',      
-  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9sZmJycGJvdnFtcWFhb2xqem5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2NTIyMTYsImV4cCI6MjA4MzIyODIxNn0.QRY79TF4PD659wyr1XeQJHAUvjUEbBlKQ4kSUenYZvg'     
+  url: "https://olfbrpbovqmqaaoljznm.supabase.co",
+  anonKey:
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9sZmJycGJvdnFtcWFhb2xqem5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2NTIyMTYsImV4cCI6MjA4MzIyODIxNn0.QRY79TF4PD659wyr1XeQJHAUvjUEbBlKQ4kSUenYZvg",
 };
 
 // Initialize Supabase client
-if (typeof window.supabase !== 'undefined') {
+if (typeof window.supabase !== "undefined") {
   window.supabaseClient = window.supabase.createClient(
     window.SUPABASE_CONFIG.url,
     window.SUPABASE_CONFIG.anonKey
@@ -21,13 +22,13 @@ window.CONTRACTS = {
   POKEMON_NFT: "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B",
   TOURNAMENT: "0x4A449e3C45fCB59eA14c1C61ab8ABaf13327eCD5",
   NFT_LOCK_GUARD: "0xe1C2ea707fBE1F1b59E5f4C045c81D2c53C8d43D",
-  
+
   // Collection/Marketplace expect these (with suffix)
   PKCN_ADDRESS: "0x8D38B8F5C1b7ed7f13BF5c46be31272ffD2AE6Ce",
   MARKETPLACE_ADDRESS: "0xf846D560F06a2D32fc550c8b5Ce593729B0a055D",
   POKEMON_NFT_ADDRESS: "0x1477704FC8279BAB0a0475d3F78d6Dc624d5f04B",
   TOURNAMENT_ADDRESS: "0x4A449e3C45fCB59eA14c1C61ab8ABaf13327eCD5",
-  NFT_LOCK_GUARD_ADDRESS: "0xe1C2ea707fBE1F1b59E5f4C045c81D2c53C8d43D" 
+  NFT_LOCK_GUARD_ADDRESS: "0xe1C2ea707fBE1F1b59E5f4C045c81D2c53C8d43D",
 };
 
 // =========================================
@@ -49,9 +50,9 @@ window.ABIS = {
     "function minter() view returns (address)",
     "event Transfer(address indexed from, address indexed to, uint256 value)",
     "event Approval(address indexed owner, address indexed spender, uint256 value)",
-    "event MinterUpdated(address indexed newMinter)"
+    "event MinterUpdated(address indexed newMinter)",
   ],
-  
+
   // MARKETPLACE ABI
   MARKETPLACE: [
     "function buyPokemon(string memory name, string memory rarity, string memory imageURI, uint256 price) public returns (uint256)",
@@ -62,9 +63,9 @@ window.ABIS = {
     "event PokeListed(uint256 indexed listingId, uint256 indexed tokenId, address indexed seller, uint256 price)",
     "event ListingBought(uint256 indexed listingId, uint256 indexed tokenId, address indexed buyer, uint256 price)",
     "event PokeDelisted(uint256 indexed listingId, uint256 indexed tokenId)",
-    "event PokePurchased(address indexed buyer, uint256 indexed tokenId, uint256 price)"
+    "event PokePurchased(address indexed buyer, uint256 indexed tokenId, uint256 price)",
   ],
-  
+
   // POKEMON_NFT ABI
   POKEMON_NFT: [
     "function mint(address to, string memory name, string memory rarity, string memory imageURI) public returns (uint256)",
@@ -82,31 +83,31 @@ window.ABIS = {
     "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
     "event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)",
     "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)",
-    "event PokemonMinted(uint256 indexed tokenId, address indexed owner, string name, string rarity)"
+    "event PokemonMinted(uint256 indexed tokenId, address indexed owner, string name, string rarity)",
   ],
-  
- // TOURNAMENT ABI
-TOURNAMENT: [
-  "function ENTRY_FEE() view returns (uint256)",
-  "function startTournament(string tournamentId, uint256 tokenId, string difficulty, uint256 opponentCount) external",
-  "function completeTournament(string tournamentId, uint256 wins, bool isPerfect) external",
-  "function claimReward(string tournamentId) external",
-  "function calculateReward(string difficulty, uint256 wins, bool isPerfect) view returns (uint256)",
-  "function getEstimatedRewards(string difficulty, uint256 opponentCount) view returns (uint256 minReward, uint256 maxReward)",
-  "function getActiveTournament(address) external view returns (string, bool, bool)",
-  "function getUnclaimedRewards(address) external view returns (string[], uint256[])",
-  "function getTournamentData(string) external view returns ((address,uint256,string,uint256,uint256,bool,bool,uint256,uint256,uint256))", // FIXED
-  "function getLockStatus(uint256) external view returns (bool, string)",
-  "function canStartTournament(address, uint256) external view returns (bool, string)",
-  "function expireTournament(string) external",
-  "event TournamentStarted(string indexed tournamentId, address indexed player, uint256 tokenId, string difficulty, uint256 opponentCount, uint256 entryFee)",
-  "event TournamentCompleted(string indexed tournamentId, uint256 wins, uint256 totalReward)",
-  "event RewardClaimed(string indexed tournamentId, address indexed player, uint256 reward)",
-  "event TournamentExpired(string indexed tournamentId, address indexed player)",
-  "event NFTUnlocked(uint256 indexed tokenId, address indexed player)",
-  "event PlayerCleared(address indexed player)",
 
-   "function claimAirdrop() external",
+  // TOURNAMENT ABI
+  TOURNAMENT: [
+    "function ENTRY_FEE() view returns (uint256)",
+    "function startTournament(string tournamentId, uint256 tokenId, string difficulty, uint256 opponentCount) external",
+    "function completeTournament(string tournamentId, uint256 wins, bool isPerfect) external",
+    "function claimReward(string tournamentId) external",
+    "function calculateReward(string difficulty, uint256 wins, bool isPerfect) view returns (uint256)",
+    "function getEstimatedRewards(string difficulty, uint256 opponentCount) view returns (uint256 minReward, uint256 maxReward)",
+    "function getActiveTournament(address) external view returns (string, bool, bool)",
+    "function getUnclaimedRewards(address) external view returns (string[], uint256[])",
+    "function getTournamentData(string) external view returns ((address,uint256,string,uint256,uint256,bool,bool,uint256,uint256,uint256))", // FIXED
+    "function getLockStatus(uint256) external view returns (bool, string)",
+    "function canStartTournament(address, uint256) external view returns (bool, string)",
+    "function expireTournament(string) external",
+    "event TournamentStarted(string indexed tournamentId, address indexed player, uint256 tokenId, string difficulty, uint256 opponentCount, uint256 entryFee)",
+    "event TournamentCompleted(string indexed tournamentId, uint256 wins, uint256 totalReward)",
+    "event RewardClaimed(string indexed tournamentId, address indexed player, uint256 reward)",
+    "event TournamentExpired(string indexed tournamentId, address indexed player)",
+    "event NFTUnlocked(uint256 indexed tokenId, address indexed player)",
+    "event PlayerCleared(address indexed player)",
+
+    "function claimAirdrop() external",
     "function airdropToUser(address user) external",
     "function isEligibleForAirdrop(address user) external view returns (bool)",
     "function hasClaimedAirdrop(address user) external view returns (bool)",
@@ -120,12 +121,20 @@ TOURNAMENT: [
     "function isNFTLockedInPvP(uint256 tokenId) external view returns (bool)",
     "function getActivePvPMatch(address player) external view returns (string)",
     "function canJoinPvP(address player, uint256 tokenId) external view returns (bool, string)",
-    
+
     "event PvPMatchCreated(string indexed matchId, address player1, address player2, uint256 totalStake)",
     "event PvPMatchCompleted(string indexed matchId, address winner, uint256 reward)",
-    "event PvPRewardClaimed(string indexed matchId, address winner, uint256 amount)"
-],
-  
+    "event PvPRewardClaimed(string indexed matchId, address winner, uint256 amount)",
+
+    // Add to window.ABIS.TOURNAMENT array:
+    "function initializePvPMatch(string matchId, address player1, address player2, uint256 tokenId1, uint256 tokenId2) external",
+    "function stakePvP(string matchId) external",
+    "function getPvPMatchData(string matchId) view returns (tuple(string matchId, address player1, address player2, uint256 player1TokenId, uint256 player2TokenId, uint256 stakeAmount, address winner, bool player1Staked, bool player2Staked, bool isComplete, bool rewardClaimed, uint256 startBlock))",
+    "function isPvPMatchReady(string matchId) view returns (bool)",
+    "function getPlayerStakeStatus(string matchId, address player) view returns (bool)",
+    "function cancelPvPMatch(string matchId) external",
+  ],
+
   // NFT_LOCK_GUARD ABI
   NFT_LOCK_GUARD: [
     "function tournament() view returns (address)",
@@ -136,34 +145,43 @@ TOURNAMENT: [
     "function canTransfer(uint256 tokenId) view returns (bool)",
     "event GuardedTransfer(address indexed from, address indexed to, uint256 indexed tokenId)",
     "event GuardedSafeTransfer(address indexed from, address indexed to, uint256 indexed tokenId)",
-    "error NFTLockedInTournament(uint256 tokenId)"
-  ]
+    "error NFTLockedInTournament(uint256 tokenId)",
+  ],
 };
 
 // =========================================
 // HELPER FUNCTIONS
 // =========================================
-window.checkMinter = async function() {
+window.checkMinter = async function () {
   try {
     if (!window.ethereum) {
       alert("Please install MetaMask");
       return;
     }
-    
+
     const provider = new ethers.BrowserProvider(window.ethereum);
     const pkcnAddress = window.CONTRACTS.PKCN;
     const tournamentAddress = window.CONTRACTS.TOURNAMENT;
-    
+
     const minterABI = [
       "function minter() view returns (address)",
-      "function setMinter(address) external"
+      "function setMinter(address) external",
     ];
-    
-    const pkcnContract = new ethers.Contract(pkcnAddress, minterABI, await provider.getSigner());
+
+    const pkcnContract = new ethers.Contract(
+      pkcnAddress,
+      minterABI,
+      await provider.getSigner()
+    );
     const currentMinter = await pkcnContract.minter();
-    
-    alert(`PKCN Minter Status:\n\nCurrent Minter: ${currentMinter}\nTournament: ${tournamentAddress}\n\nMatch? ${currentMinter.toLowerCase() === tournamentAddress.toLowerCase() ? '✅ YES' : '❌ NO'}`);
-    
+
+    alert(
+      `PKCN Minter Status:\n\nCurrent Minter: ${currentMinter}\nTournament: ${tournamentAddress}\n\nMatch? ${
+        currentMinter.toLowerCase() === tournamentAddress.toLowerCase()
+          ? "✅ YES"
+          : "❌ NO"
+      }`
+    );
   } catch (error) {
     console.error("Minter check error:", error);
     alert(`Error: ${error.message}`);

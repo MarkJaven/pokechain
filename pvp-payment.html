@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PvP Payment Required</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Orbitron', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #000000 100%);
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Prevent closing/navigating away */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: radial-gradient(ellipse at center, rgba(255, 59, 59, 0.1) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .payment-container {
+      max-width: 600px;
+      width: 90%;
+      background: linear-gradient(135deg, rgba(20, 20, 30, 0.98), rgba(10, 10, 20, 0.95));
+      border: 3px solid var(--danger, #ff3b3b);
+      border-radius: 20px;
+      padding: 50px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(255, 59, 59, 0.4);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 20px 60px rgba(255, 59, 59, 0.4); }
+      50% { box-shadow: 0 20px 80px rgba(255, 59, 59, 0.6); }
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      color: #ff3b3b;
+      margin-bottom: 20px;
+      text-shadow: 0 0 20px rgba(255, 59, 59, 0.8);
+    }
+
+    .defeat-message {
+      font-size: 1.2rem;
+      margin-bottom: 30px;
+      color: rgba(255, 255, 255, 0.9);
+      line-height: 1.6;
+    }
+
+    .payment-amount {
+      font-size: 3rem;
+      color: #ffd93d;
+      font-weight: 900;
+      margin: 30px 0;
+      text-shadow: 0 0 30px rgba(255, 217, 61, 0.8);
+    }
+
+    .warning-box {
+      background: rgba(255, 59, 59, 0.1);
+      border: 2px solid #ff3b3b;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 30px 0;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .pay-btn {
+      width: 100%;
+      padding: 20px;
+      background: linear-gradient(180deg, #ff3b3b, #d32f2f);
+      border: none;
+      border-radius: 12px;
+      color: white;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 800;
+      font-size: 1.2rem;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin-top: 20px;
+      letter-spacing: 2px;
+    }
+
+    .pay-btn:hover:not(:disabled) {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(255, 59, 59, 0.6);
+    }
+
+    .pay-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .timer {
+      font-size: 1.5rem;
+      color: #ffd93d;
+      margin-top: 20px;
+      font-weight: 700;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(255, 255, 255, 0.2);
+      border-top-color: #ff3b3b;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .skull {
+      font-size: 5rem;
+      margin-bottom: 20px;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="payment-container">
+    <div class="skull">💀</div>
+    <h1>YOU LOST!</h1>
+    
+    <div class="defeat-message">
+      You were defeated in battle.<br>
+      Honor demands payment.
+    </div>
+
+    <div class="payment-amount" id="paymentAmount">— PKCN</div>
+
+    <div class="warning-box">
+      ⚠️ <strong>WARNING:</strong> You cannot leave this page until payment is made.<br><br>
+      Your wallet will be flagged if you attempt to close this window.<br>
+      Future PvP battles will be restricted until debt is settled.
+    </div>
+
+    <div class="timer" id="paymentTimer">Time remaining: --:--</div>
+
+    <div class="spinner" id="paymentSpinner"></div>
+
+    <button id="payBtn" class="pay-btn">PAY DEBT</button>
+
+    <div id="statusMessage" style="margin-top: 20px; color: #ffd93d; font-size: 0.9rem;"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+  <script src="./config.js"></script>
+  <script src="./wallet.js"></script>
+  <script>
+    let paymentState = {
+      roomId: null,
+      amount: 0,
+      timeLimit: 300, // 5 minutes
+      interval: null,
+      supabaseClient: null
+    };
+
+    // Prevent page close
+    window.addEventListener('beforeunload', (e) => {
+      if (!paymentState.paid) {
+        e.preventDefault();
+        e.returnValue = 'You must pay your debt before leaving!';
+        return e.returnValue;
+      }
+    });
+
+    // Prevent back button
+    history.pushState(null, null, location.href);
+    window.onpopstate = function() {
+      history.go(1);
+      alert('❌ You cannot go back until payment is made!');
+    };
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      // Initialize Supabase
+      if (window.SUPABASE_CONFIG) {
+        paymentState.supabaseClient = window.supabase.createClient(
+          window.SUPABASE_CONFIG.url,
+          window.SUPABASE_CONFIG.anonKey
+        );
+      }
+
+      // Get params
+      const params = new URLSearchParams(window.location.search);
+      paymentState.roomId = params.get('roomId');
+      paymentState.amount = parseInt(params.get('amount')) || 0;
+
+      document.getElementById('paymentAmount').textContent = `${paymentState.amount} PKCN`;
+
+      // Start countdown
+      startTimer();
+
+      // Setup payment button
+      document.getElementById('payBtn').addEventListener('click', async () => {
+        await processPayment();
+      });
+    });
+
+    function startTimer() {
+      let remaining = paymentState.timeLimit;
+      
+      paymentState.interval = setInterval(() => {
+        remaining--;
+        
+        const minutes = Math.floor(remaining / 60);
+        const seconds = remaining % 60;
+        document.getElementById('paymentTimer').textContent = 
+          `Time remaining: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+        if (remaining <= 0) {
+          clearInterval(paymentState.interval);
+          handleTimeout();
+        }
+      }, 1000);
+    }
+
+    async function processPayment() {
+      const btn = document.getElementById('payBtn');
+      const spinner = document.getElementById('paymentSpinner');
+      const status = document.getElementById('statusMessage');
+
+      btn.disabled = true;
+      spinner.style.display = 'block';
+      status.textContent = 'Processing payment...';
+
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+
+        const pkcnContract = new ethers.Contract(
+          window.CONTRACTS.PKCN,
+          window.ABIS.PKCN,
+          signer
+        );
+
+        // Get room data
+        const { data: room } = await paymentState.supabaseClient
+          .from('pvp_rooms')
+          .select('*')
+          .eq('room_id', paymentState.roomId)
+          .single();
+
+        if (!room) throw new Error('Room not found');
+
+        // Get token decimals
+        const decimals = await pkcnContract.decimals();
+        const paymentAmount = ethers.parseUnits(paymentState.amount.toString(), decimals);
+
+        status.textContent = 'Transferring PKCN to winner...';
+
+        // Transfer to winner
+        const tx = await pkcnContract.transfer(room.winner_address, paymentAmount);
+        await tx.wait();
+
+        // Update room status
+        await paymentState.supabaseClient
+          .from('pvp_rooms')
+          .update({ 
+            status: 'completed',
+            payment_tx_hash: tx.hash,
+            payment_completed_at: new Date().toISOString()
+          })
+          .eq('room_id', paymentState.roomId);
+
+        paymentState.paid = true;
+        clearInterval(paymentState.interval);
+
+        spinner.style.display = 'none';
+        status.innerHTML = '<span style="color: #00ff9d;">✅ Payment successful! Redirecting...</span>';
+
+        setTimeout(() => {
+          window.location.href = 'pvp-lobby.html';
+        }, 2000);
+
+      } catch (error) {
+        console.error('Payment failed:', error);
+        spinner.style.display = 'none';
+        status.innerHTML = `<span style="color: #ff3b3b;">❌ Payment failed: ${error.message}</span>`;
+        btn.disabled = false;
+      }
+    }
+
+    async function handleTimeout() {
+      document.getElementById('statusMessage').innerHTML = 
+        '<span style="color: #ff3b3b;">⏰ TIME EXPIRED! Your address has been flagged.</span>';
+      
+      // Flag user's address as debtor
+      await paymentState.supabaseClient
+        .from('pvp_debtors')
+        .insert({
+          debtor_address: window.wallet.getAccount().toLowerCase(),
+          room_id: paymentState.roomId,
+          amount_owed: paymentState.amount,
+          flagged_at: new Date().toISOString()
+        });
+
+      // Still allow payment, but with penalty notice
+      document.getElementById('payBtn').textContent = 'PAY DEBT (LATE - FLAGGED)';
+      document.getElementById('payBtn').disabled = false;
+    }
+  </script>
+</body>
+</html>

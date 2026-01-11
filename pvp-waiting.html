@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Waiting for Payment</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Orbitron', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #000000 100%);
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .waiting-container {
+      max-width: 600px;
+      width: 90%;
+      background: linear-gradient(135deg, rgba(20, 20, 30, 0.98), rgba(10, 10, 20, 0.95));
+      border: 3px solid #00ff9d;
+      border-radius: 20px;
+      padding: 50px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 255, 157, 0.4);
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      color: #00ff9d;
+      margin-bottom: 20px;
+      text-shadow: 0 0 20px rgba(0, 255, 157, 0.8);
+    }
+
+    .victory-message {
+      font-size: 1.2rem;
+      margin-bottom: 30px;
+      color: rgba(255, 255, 255, 0.9);
+      line-height: 1.6;
+    }
+
+    .payment-amount {
+      font-size: 3rem;
+      color: #ffd93d;
+      font-weight: 900;
+      margin: 30px 0;
+      text-shadow: 0 0 30px rgba(255, 217, 61, 0.8);
+    }
+
+    .status-box {
+      background: rgba(0, 255, 157, 0.1);
+      border: 2px solid #00ff9d;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 30px 0;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .spinner {
+      width: 60px;
+      height: 60px;
+      border: 5px solid rgba(0, 255, 157, 0.2);
+      border-top-color: #00ff9d;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 30px auto;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .trophy {
+      font-size: 5rem;
+      margin-bottom: 20px;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0) rotate(-10deg); }
+      50% { transform: translateY(-15px) rotate(10deg); }
+    }
+
+    .timer {
+      font-size: 1.2rem;
+      color: rgba(255, 255, 255, 0.7);
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="waiting-container">
+    <div class="trophy">🏆</div>
+    <h1>VICTORY!</h1>
+    
+    <div class="victory-message">
+      You won the battle!<br>
+      Waiting for opponent to pay...
+    </div>
+
+    <div class="payment-amount" id="paymentAmount">— PKCN</div>
+
+    <div class="status-box">
+      <div class="spinner"></div>
+      <div id="statusText">Opponent has 5 minutes to pay...</div>
+      <div class="timer" id="waitTimer">Elapsed: 00:00</div>
+    </div>
+
+    <button id="returnBtn" class="pay-btn" style="display: none; background: #00ff9d; color: #000;">RETURN TO LOBBY</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    let waitState = {
+      roomId: null,
+      amount: 0,
+      elapsed: 0,
+      interval: null,
+      supabaseClient: null,
+      subscription: null
+    };
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      // Initialize Supabase
+      if (window.SUPABASE_CONFIG) {
+        waitState.supabaseClient = window.supabase.createClient(
+          window.SUPABASE_CONFIG.url,
+          window.SUPABASE_CONFIG.anonKey
+        );
+      }
+
+      // Get params
+      const params = new URLSearchParams(window.location.search);
+      waitState.roomId = params.get('roomId');
+      waitState.amount = parseInt(params.get('amount')) || 0;
+
+      document.getElementById('paymentAmount').textContent = `+${waitState.amount} PKCN`;
+
+      // Start timer
+      startTimer();
+
+      // Subscribe to room updates
+      subscribeToPayment();
+    });
+
+    function startTimer() {
+      waitState.interval = setInterval(() => {
+        waitState.elapsed++;
+        
+        const minutes = Math.floor(waitState.elapsed / 60);
+        const seconds = waitState.elapsed % 60;
+        document.getElementById('waitTimer').textContent = 
+          `Elapsed: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }, 1000);
+    }
+
+    function subscribeToPayment() {
+      waitState.subscription = waitState.supabaseClient
+        .channel(`payment_${waitState.roomId}`)
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'pvp_rooms',
+          filter: `room_id=eq.${waitState.roomId}`
+        }, (payload) => {
+          if (payload.new.status === 'completed') {
+            handlePaymentReceived();
+          }
+        })
+        .subscribe();
+    }
+
+    function handlePaymentReceived() {
+      clearInterval(waitState.interval);
+      
+      document.getElementById('statusText').innerHTML = 
+        '<span style="color: #00ff9d; font-size: 1.2rem;">✅ PAYMENT RECEIVED!</span>';
+      
+      document.querySelector('.spinner').style.display = 'none';
+      document.getElementById('returnBtn').style.display = 'block';
+      document.getElementById('returnBtn').onclick = () => {
+        window.location.href = 'pvp-lobby.html';
+      };
+    }
+  </script>
+</body>
+</html>

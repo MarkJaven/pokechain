@@ -168,12 +168,30 @@
           provider
         );
         
-        const isEligible = await tournamentContract.isEligibleForAirdrop(account);
+        // First try smart contract airdrop eligibility
+        try {
+          const isEligible = await tournamentContract.isEligibleForAirdrop(account);
+          if (isEligible) {
+            airdropSection.classList.add('visible');
+            claimAirdropBtn.disabled = false;
+            claimAirdropBtn.textContent = 'Claim 500 PKCN';
+            return;
+          }
+        } catch (contractError) {
+          console.log('Smart contract airdrop not available, checking client-side bonus eligibility');
+        }
         
-        if (isEligible) {
+        // Fallback: Check if user qualifies for client-side bonus
+        const balanceStr = await window.wallet.getTokenBalance(account);
+        const balance = parseFloat(balanceStr);
+        
+        // Check if already received bonus
+        const hasReceived = localStorage.getItem(`pkcn_bonus_${account}`);
+        
+        if (balance === 0 && !hasReceived) {
           airdropSection.classList.add('visible');
           claimAirdropBtn.disabled = false;
-          claimAirdropBtn.textContent = 'Claim 500 PKCN';
+          claimAirdropBtn.textContent = 'Claim 500 PKCN (Bonus)';
         } else {
           airdropSection.classList.remove('visible');
         }
@@ -200,19 +218,36 @@
         document.getElementById('txStatus').textContent = 'Confirm transaction in MetaMask...';
         txModal.show();
         
-        const signer = await window.wallet.getSigner();
-        const tournamentContract = new ethers.Contract(
-          window.CONTRACTS.TOURNAMENT,
-          window.ABIS.TOURNAMENT,
-          signer
-        );
-        
-        const tx = await tournamentContract.claimAirdrop();
-        document.getElementById('txStatus').textContent = 'Waiting for confirmation...';
-        
-        await tx.wait();
-        
-        document.getElementById('txStatus').textContent = '✅ Airdrop claimed successfully!';
+        // First try smart contract airdrop
+        try {
+          const signer = await window.wallet.getSigner();
+          const tournamentContract = new ethers.Contract(
+            window.CONTRACTS.TOURNAMENT,
+            window.ABIS.TOURNAMENT,
+            signer
+          );
+          
+          const tx = await tournamentContract.claimAirdrop();
+          document.getElementById('txStatus').textContent = 'Waiting for confirmation...';
+          await tx.wait();
+          
+          document.getElementById('txStatus').textContent = '✅ Airdrop claimed successfully!';
+          
+        } catch (contractError) {
+          console.log('Smart contract airdrop failed, trying client-side bonus:', contractError.message);
+          
+          // Fallback to client-side bonus
+          document.getElementById('txStatus').textContent = 'Granting bonus tokens...';
+          
+          const contract = await window.wallet.getTokenContract(true);
+          const tx = await contract.mint(account, ethers.parseEther('500'));
+          await tx.wait();
+          
+          // Mark as granted
+          localStorage.setItem(`pkcn_bonus_${account}`, 'granted');
+          
+          document.getElementById('txStatus').textContent = '✅ Bonus granted successfully!';
+        }
         
         setTimeout(() => {
           txModal.hide();

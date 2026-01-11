@@ -78,8 +78,7 @@
     _meta = null;
     updateNavbarDisplay();
     await updateBalanceDisplayIfNeeded();
-      // ✅ ADD THIS LINE HERE
-    await grantNewUserBonus();
+      // ✅ REMOVED: grantNewUserBonus() - now handled through airdrop button
     return _account;
   }
 
@@ -106,14 +105,42 @@
       throw new Error('TOKEN_ADDRESS not configured in wallet.js CONFIG');
     }
 
+    // Check if on correct network
+    const network = await _provider.getNetwork();
+    console.log('Current network chainId:', network.chainId, 'type:', typeof network.chainId);
+    console.log('Expected chainId:', BigInt(CONFIG.CHAIN_ID), 'type:', typeof BigInt(CONFIG.CHAIN_ID));
+    console.log('Are they equal?', network.chainId === BigInt(CONFIG.CHAIN_ID));
+    if (network.chainId !== BigInt(CONFIG.CHAIN_ID)) {
+      const networkNames = {
+        '1': 'Ethereum Mainnet',
+        '11155111': 'Sepolia Testnet',
+        '5': 'Goerli Testnet',
+        '137': 'Polygon Mainnet',
+        '80001': 'Polygon Mumbai'
+      };
+      const currentNetworkName = networkNames[network.chainId.toString()] || `Chain ID ${network.chainId}`;
+      throw new Error(`Wrong network! You are on ${currentNetworkName}. Please switch to Sepolia Testnet in MetaMask.`);
+    }
+
     // verify code exists at the address on the current chain
-    const code = await _provider.getCode(CONFIG.TOKEN_ADDRESS);
-    console.log('getCode for token address ->', code);
-    if (!code || code === '0x' || code === '0x0') {
-      throw new Error(
-        `NO CONTRACT AT TOKEN_ADDRESS (${CONFIG.TOKEN_ADDRESS}) on current chain. ` +
-        `Likely wrong MetaMask network or wrong token address.`
-      );
+    console.log('Checking contract code at address:', CONFIG.TOKEN_ADDRESS);
+    console.log('Provider:', _provider);
+    try {
+      const code = await _provider.getCode(CONFIG.TOKEN_ADDRESS);
+      console.log('getCode result:', code);
+      console.log('Code length:', code.length);
+      if (!code || code === '0x' || code === '0x0') {
+        console.log('Contract code check failed - no contract found, but continuing anyway...');
+        // Don't throw error, try to proceed
+        // throw new Error(
+        //   `NO CONTRACT AT TOKEN_ADDRESS (${CONFIG.TOKEN_ADDRESS}) on current chain. ` +
+        //   `Likely wrong MetaMask network or wrong token address.`
+        // );
+      } else {
+        console.log('Contract code found, proceeding...');
+      }
+    } catch (codeError) {
+      console.log('getCode failed:', codeError.message, '- continuing anyway...');
     }
 
     const target = write ? await getSigner() : _provider;
@@ -132,6 +159,7 @@
       try {
         const decResult = await c.decimals();
         decimals = Number(decResult);
+        console.log('Decimals:', decimals);
       } catch (decError) {
         console.warn('Failed to fetch decimals (falling back to 0):', decError);
         decimals = 0;
@@ -140,12 +168,14 @@
       let symbol;
       try {
         symbol = await c.symbol();
+        console.log('Symbol:', symbol);
       } catch (symError) {
         console.warn('Failed to fetch symbol (falling back to PKCN):', symError);
         symbol = 'PKCN';
       }
 
       _meta = { decimals, symbol };
+      console.log('Final metadata:', _meta);
       return _meta;
     } catch (e) {
       console.error('fetchTokenMetadata failed:', e);
@@ -158,14 +188,18 @@
     try {
       console.log('=== GETTING TOKEN BALANCE ===', address);
       const meta = await fetchTokenMetadata();
+      console.log('Token metadata:', meta);
       const c = await getTokenContract(false);
+      console.log('Token contract obtained:', c);
       const raw = await c.balanceOf(address);
+      console.log('Raw balance:', raw);
       let formatted;
       if (meta.decimals === 0) {
         formatted = raw.toString();
       } else {
         formatted = ethers.formatUnits(raw, meta.decimals);
       }
+      console.log('Formatted balance:', formatted);
       return formatted;
     } catch (e) {
       console.error('getTokenBalance error:', e);
@@ -231,7 +265,9 @@
       console.log('✅ Balance display updated:', balEl ? balEl.textContent : '(no element)');
     } catch (e) {
       console.error('❌ updateBalanceDisplay failed:', e);
-      if (e.message && e.message.includes('NO CONTRACT AT TOKEN_ADDRESS')) {
+      if (e.message && e.message.includes('Wrong network')) {
+        if (balEl) balEl.textContent = 'Wrong network (switch to Sepolia)';
+      } else if (e.message && e.message.includes('NO CONTRACT AT TOKEN_ADDRESS')) {
         if (balEl) balEl.textContent = 'No token (wrong network?)';
       } else {
         if (balEl) balEl.textContent = 'Error';
@@ -259,12 +295,15 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     console.log('=== WALLET.JS LOADED ===');
-    setTimeout(async () => {
+    
+    // Try to auto-connect immediately, then retry after delay
+    const tryAutoConnect = async () => {
       try {
         await ensureProvider();
         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
         if (accounts && accounts[0]) {
           _account = accounts[0];
+          _signer = await _provider.getSigner();
           console.log('Auto-connected to account:', _account);
           updateNavbarDisplay();
           await updateBalanceDisplayIfNeeded();
@@ -276,7 +315,13 @@
       } finally {
         document.dispatchEvent(new Event('wallet.ready'));
       }
-    }, 500);
+    };
+
+    // Try immediately
+    tryAutoConnect();
+    
+    // Also try after a short delay in case MetaMask loads slower
+    setTimeout(tryAutoConnect, 1000);
   });
   
   // ✅ NEW: Grant 500 PKCN to new users

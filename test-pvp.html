@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PvP Test</title>
+</head>
+<body>
+  <h1>PvP Off-Chain Test</h1>
+  <div id="pvpPokemonGrid"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script>
+    // Mock window.supabase for testing
+    window.supabase = { createClient: () => ({}) };
+  </script>
+  <script src="./pvp-lobby.js"></script>
+
+  <script>
+    // Test the mock collection loading
+    setTimeout(async () => {
+      console.log('Testing mock collection...');
+      await loadMockCollection();
+      console.log('Mock collection test complete');
+    }, 1000);
+  </script>
+</body>
+</html>
