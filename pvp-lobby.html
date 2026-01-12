@@ -178,6 +178,18 @@
       border-radius: 4px;
     }
 
+    .mode-btn.active {
+      border-color: var(--primary) !important;
+      background: linear-gradient(180deg, rgba(0, 255, 157, 0.2), rgba(0, 255, 157, 0.1)) !important;
+      color: white !important;
+    }
+
+    .mode-btn:not(.active) {
+      border-color: rgba(255, 170, 0, 0.3) !important;
+      background: rgba(255, 170, 0, 0.05) !important;
+      color: rgba(255, 255, 255, 0.8) !important;
+    }
+
     @media (max-width: 992px) {
       .pvp-lobby-container {
         grid-template-columns: 1fr;
@@ -187,6 +199,7 @@
 </head>
 <body>
   <!-- === NAVBAR === -->
+   <!-- === NAVBAR === -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-transparent px-4 py-3">
     <a class="navbar-brand fs-3 fw-bold text-warning" href="index.html">Poké<span class="text-success">Chain</span></a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -195,10 +208,18 @@
     <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
       <ul class="navbar-nav gap-3 align-items-center">
         <li class="nav-item"><a class="nav-link" href="index.html">Home</a></li>
+        <li class="nav-item"><a class="nav-link" href="marketplace.html">Marketplace</a></li>
         <li class="nav-item"><a class="nav-link" href="collection.html">Collection</a></li>
-        <li class="nav-item"><a class="nav-link" href="tournament.html">PvE Tournament</a></li>
-        <li class="nav-item"><a class="nav-link active" href="pvp-lobby.html">⚔️ PvP Battle</a></li>
-        <li class="nav-item"><div id="pctBalance" class="small-muted px-2">—</div></li>
+        <li class="nav-item"><a class="nav-link" href="transaction-history.html">Transactions</a></li>
+        <li class="nav-item"><a class="nav-link" href="profile.html">Profile</a></li>
+                <!-- <li class="nav-item"><a class="nav-link" href="admin-panel.html">Emergency Use Only</a></li> -->
+
+        <li class="nav-item"><a class="nav-link active" href="tournament.html">Tournament</a></li>
+            <!-- <li class="nav-item"><a class="nav-link" href="admin-panel.html">admin</a></li> -->
+
+        <li class="nav-item">
+          <div id="pctBalance" class="small-muted px-2">—</div>
+        </li>
         <li class="nav-item"><button id="walletDisplay" class="btn btn-sm btn-outline-light">Connect</button></li>
       </ul>
     </div>
@@ -206,8 +227,22 @@
 
   <main class="container-fluid px-4" style="margin-top: 30px;">
     <div class="collection-hero">
-      <h1>PvP Battle Arena</h1>
-      <div class="small-muted">Challenge other trainers in real-time 1v1 battles</div>
+      <h1>PokéChain Battle Stadium</h1>n: all 0.3s;">
+      <div class="small-muted">Challenge other trainers or face AI opponents</div>
+    </div>
+
+    <!-- === MODE SELECTION === -->
+    <div class="tournament-settings-panel" style="margin-bottom: 30px;">
+      <div class="mode-selection-container" style="width: 100%; margin-bottom: 15px;">
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+          <button id="pvpModeBtn" class="mode-btn active" style="flex: 1; min-width: 200px; padding: 12px; border: 2px solid var(--primary); border-radius: 10px; background: linear-gradient(180deg, rgba(0, 255, 157, 0.2), rgba(0, 255, 157, 0.1)); color: white; font-weight: 800; cursor: pointer; transition: all 0.3s;">
+            ⚔️ PvP BATTLE
+          </button>
+          <button id="pveToggleBtn" class="mode-btn" style="flex: 1; min-width: 200px; padding: 12px; border: 2px solid rgba(255, 170, 0, 0.3); border-radius: 10px; background: rgba(255, 170, 0, 0.05); color: rgba(255, 255, 255, 0.8); font-weight: 800; cursor: pointer; transition: all 0.3s;">
+            🏆 PvE TOURNAMENT
+          </button>
+        </div>
+      </div>
     </div>
 
     <div class="pvp-lobby-container">
@@ -284,6 +319,34 @@
   <script src="./wallet.js"></script>
   <script src="./transaction-modal.js"></script>
   <script src="pvp-lobby.js"></script>
+  <script>
+    // Mode button toggle effect (fake toggle - just redirects after animation)
+    const pvpBtn = document.getElementById('pvpModeBtn');
+    const pveToggleBtn = document.getElementById('pveToggleBtn');
+    
+    if (pveToggleBtn) {
+      pveToggleBtn.addEventListener('click', () => {
+        // Animate the toggle
+        pvpBtn.style.transition = 'all 0.3s ease';
+        pveToggleBtn.style.transition = 'all 0.3s ease';
+        
+        // Swap styling temporarily
+        pvpBtn.style.borderColor = 'rgba(255, 170, 0, 0.3)';
+        pvpBtn.style.background = 'rgba(255, 170, 0, 0.05)';
+        pvpBtn.style.color = 'rgba(255, 255, 255, 0.8)';
+        pveToggleBtn.style.borderColor = 'var(--primary)';
+        pveToggleBtn.style.background = 'linear-gradient(180deg, rgba(0, 255, 157, 0.2), rgba(0, 255, 157, 0.1))';
+        pveToggleBtn.style.color = 'white';
+        
+        // After animation, redirect to tournament
+        setTimeout(() => {
+          window.location.href = 'tournament.html';
+        }, 300);
+      });
+    }
+
+    console.log('✅ PvP Lobby with toggle effect loaded');
+  </script>
 </body>
 </html>
 

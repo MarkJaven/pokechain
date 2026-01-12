@@ -54,15 +54,17 @@
     <!-- === TOURNAMENT SETTINGS PANEL === -->
 <div class="tournament-settings-panel">
   
-  <!-- PvP/PvE Mode Toggle -->
-  <div class="mode-toggle-container" style="width: 100%; margin-bottom: 15px;">
-    <div class="mode-toggle" style="display: flex; gap: 10px; justify-content: center;">
-      <button id="pveModeBtn" class="mode-btn active" style="flex: 1; padding: 12px; border: 2px solid var(--primary); border-radius: 10px; background: linear-gradient(180deg, rgba(0, 255, 157, 0.2), rgba(0, 255, 157, 0.1)); color: white; font-weight: 800; cursor: pointer; transition: all 0.3s;">
+  <!-- Mode Selection: PvE Tournament or PvP Battle -->
+  <div class="mode-selection-container" style="width: 100%; margin-bottom: 15px;">
+    <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+      <button id="pveBtn" class="mode-btn active" style="flex: 1; min-width: 200px; padding: 12px; border: 2px solid var(--primary); border-radius: 10px; background: linear-gradient(180deg, rgba(0, 255, 157, 0.2), rgba(0, 255, 157, 0.1)); color: white; font-weight: 800; cursor: pointer; transition: all 0.3s;">
         🏆 PvE TOURNAMENT
       </button>
-      <button id="pvpModeBtn" class="mode-btn" style="flex: 1; padding: 12px; border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 10px; background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.7); font-weight: 800; cursor: pointer; transition: all 0.3s;">
-        ⚔️ PvP BATTLE
-      </button>
+      <a href="pvp-lobby.html" style="flex: 1; min-width: 200px; text-decoration: none;">
+        <button class="mode-btn" style="width: 100%; padding: 12px; border: 2px solid rgba(255, 170, 0, 0.3); border-radius: 10px; background: rgba(255, 170, 0, 0.05); color: rgba(255, 255, 255, 0.8); font-weight: 800; cursor: pointer; transition: all 0.3s;">
+          ⚔️ TRY PvP BETA
+        </button>
+      </a>
     </div>
   </div>
 
