@@ -12,6 +12,7 @@ const pvpState = {
   currentMode: "browse",
   currentRoomId: null,
   modalShown: false, // Track if start battle modal has been shown
+  navigatingToBattle: false, // Prevent duplicate navigation
 };
 
 // ===================================================================
@@ -191,19 +192,6 @@ function subscribeToRoom(roomId) {
         await handleRoomUpdate(payload.new);
       }
     )
-    .on(
-      "postgres_changes",
-      {
-        event: "UPDATE",
-        schema: "public",
-        table: "pvp_players",
-        filter: `room_id=eq.${roomId}`,
-      },
-      async (payload) => {
-        // Refresh room display when player readiness changes
-        await refreshRoomsList();
-      }
-    )
     .subscribe((status) => {
       console.log(`📡 Subscription status for room ${roomId}:`, status);
     });
@@ -218,21 +206,7 @@ async function handleRoomUpdate(room) {
   if (room.status === "ready" && pvpState.currentRoomId === room.room_id && !pvpState.modalShown) {
     console.log("🎯 Ready status detected for current room, showing modal for:", pvpState.playerName);
     pvpState.modalShown = true;
-    // Both players get the start battle prompt (no need to check if they're in the room since they should be)
     await showStartBattlePrompt(room.room_id);
-  }
-
-  // Start battle when both players are ready
-  if (room.status === "battling" && pvpState.currentRoomId === room.room_id) {
-    console.log("🎯 Battle starting for:", pvpState.playerName);
-    await showPvPSuccess(
-      "⚔️ Battle Starting!",
-      "Get ready to battle!"
-    );
-
-    setTimeout(() => {
-      startPvPBattle(room.room_id);
-    }, 1500);
   }
 
   // Handle battle completion
@@ -249,12 +223,68 @@ async function handleRoomUpdate(room) {
 // START BATTLE PROMPT FOR BOTH PLAYERS
 // ===================================================================
 
+function showSynchronizedLoading() {
+  // Remove any existing loading screens
+  const existing = document.getElementById('syncLoadingScreen');
+  if (existing) return;
+
+  const loadingScreen = document.createElement('div');
+  loadingScreen.id = 'syncLoadingScreen';
+  loadingScreen.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    backdrop-filter: blur(10px);
+  `;
+
+  loadingScreen.innerHTML = `
+    <div style="text-align: center;">
+      <div style="
+        width: 80px;
+        height: 80px;
+        border: 6px solid rgba(0, 255, 157, 0.2);
+        border-top: 6px solid var(--primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 30px;
+      "></div>
+      <h2 style="color: var(--primary); margin-bottom: 15px; font-size: 2rem; font-weight: 800;">
+        ⚔️ BATTLE STARTING
+      </h2>
+      <p style="color: white; font-size: 1.2rem; margin-bottom: 10px;">
+        Both players ready!
+      </p>
+      <p style="color: rgba(255,255,255,0.6); font-size: 1rem;">
+        Loading battle arena...
+      </p>
+    </div>
+    <style>
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  `;
+
+  document.body.appendChild(loadingScreen);
+}
+
 async function showStartBattlePrompt(roomId) {
   console.log("🎯 showStartBattlePrompt called for room:", roomId, "player:", pvpState.playerName);
+  
   return new Promise((resolve) => {
     // Create modal overlay
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
+    modal.id = 'battlePromptModal';
     modal.style.cssText = `
       position: fixed;
       top: 0;
@@ -284,7 +314,7 @@ async function showStartBattlePrompt(roomId) {
         </h3>
         <p style="color: white; margin-bottom: 25px; line-height: 1.5;">
           Both players must click "Start Battle" to begin.<br><br>
-          Waiting for both players to confirm...
+          <span id="readyStatus">Waiting for both players to confirm...</span>
         </p>
         <div style="display: flex; gap: 15px; justify-content: center;">
           <button id="startBattleBtn" class="btn btn-success" style="padding: 12px 24px; font-size: 1.1rem;">
@@ -299,52 +329,114 @@ async function showStartBattlePrompt(roomId) {
 
     document.body.appendChild(modal);
 
+    let pollInterval = null;
+    let isProcessing = false;
+
+    // Poll function to check if both players are ready
+    const pollReadyStatus = async () => {
+      if (isProcessing) return;
+      
+      try {
+        const { data: players } = await pvpState.supabaseClient
+          .from("pvp_players")
+          .select("ready, player_name")
+          .eq("room_id", roomId);
+
+        if (!players) return;
+
+        const readyCount = players.filter(p => p.ready).length;
+        const statusEl = document.getElementById('readyStatus');
+        
+        console.log(`🔄 Polling: ${readyCount}/2 players ready`);
+        
+        if (statusEl) {
+          statusEl.textContent = `Ready: ${readyCount}/2 players`;
+          if (readyCount === 1) {
+            statusEl.style.color = '#ffd93d';
+          }
+        }
+
+        // If both players are ready, start the battle!
+        if (readyCount >= 2 && !isProcessing) {
+          isProcessing = true;
+          console.log('🎯 Both players ready! Starting battle...');
+          
+          // Stop polling
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+
+          // Update room status to battling (only one player needs to do this)
+          await pvpState.supabaseClient
+            .from("pvp_rooms")
+            .update({ status: "battling" })
+            .eq("room_id", roomId);
+
+          // Close modal and show loading
+          modal.remove();
+          showSynchronizedLoading();
+
+          // Navigate to battle
+          setTimeout(() => {
+            startPvPBattle(roomId);
+            resolve(true);
+          }, 2000);
+        }
+      } catch (error) {
+        console.error('Error polling ready status:', error);
+      }
+    };
+
     // Handle Start Battle button
     document.getElementById('startBattleBtn').onclick = async () => {
-      document.getElementById('startBattleBtn').disabled = true;
-      document.getElementById('startBattleBtn').textContent = 'Waiting for opponent...';
+      const btn = document.getElementById('startBattleBtn');
+      btn.disabled = true;
+      btn.textContent = 'Ready! ✓';
+      btn.style.background = '#ffd93d';
+      btn.style.color = '#000';
 
       try {
-        // Mark this player as ready by updating their player record
+        // Mark this player as ready
         await pvpState.supabaseClient
           .from("pvp_players")
           .update({ ready: true })
           .eq("room_id", roomId)
           .eq("player_name", pvpState.playerName);
 
-        // Check if both players are now ready
-        const { data: players } = await pvpState.supabaseClient
-          .from("pvp_players")
-          .select("ready")
-          .eq("room_id", roomId);
+        console.log('✅ Marked as ready, starting to poll...');
 
-        const readyCount = players.filter(p => p.ready).length;
+        // Start polling every 500ms to check if both players are ready
+        pollInterval = setInterval(pollReadyStatus, 500);
+        
+        // Also check immediately
+        await pollReadyStatus();
 
-        if (readyCount >= 2) {
-          // Both players are ready - start the battle
-          modal.remove();
-          await pvpState.supabaseClient
-            .from("pvp_rooms")
-            .update({ status: "battling" })
-            .eq("room_id", roomId);
-          resolve(true);
-        } else {
-          // Wait for the other player - update button text
-          document.getElementById('startBattleBtn').textContent = `Waiting for opponent... (${readyCount}/2 ready)`;
-        }
       } catch (error) {
-        console.error('Failed to mark as ready:', error);
-        modal.remove();
-        await showPvPError("❌ Error", "Failed to start battle. Please try again.");
-        resolve(false);
+        console.error('❌ Failed to mark as ready:', error);
+        btn.disabled = false;
+        btn.textContent = '🚀 Start Battle';
+        btn.style.background = '';
+        btn.style.color = '';
+        await showPvPError("❌ Error", "Failed to mark as ready. Please try again.");
       }
     };
 
     // Handle Cancel button
     document.getElementById('cancelBattleBtn').onclick = () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
       modal.remove();
       resolve(false);
     };
+
+    // Clean up on modal close
+    window.addEventListener('beforeunload', () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    });
   });
 }
 
@@ -353,7 +445,15 @@ async function showStartBattlePrompt(roomId) {
 // ===================================================================
 
 async function startPvPBattle(roomId) {
+  // Prevent duplicate navigation
+  if (pvpState.navigatingToBattle) {
+    console.log('⚠️ Already navigating to battle, skipping...');
+    return;
+  }
+  
+  pvpState.navigatingToBattle = true;
   console.log("🚀 startPvPBattle called for room:", roomId);
+  
   try {
     const { data: room } = await pvpState.supabaseClient
       .from("pvp_rooms")
@@ -397,6 +497,7 @@ async function startPvPBattle(roomId) {
     console.log("🔗 Navigating to:", `battle-pvp.html?${params.toString()}`);
     window.location.href = `battle-pvp.html?${params.toString()}`;
   } catch (error) {
+    pvpState.navigatingToBattle = false;
     await showPvPError("❌ Error", `Failed to start battle: ${error.message}`);
   }
 }

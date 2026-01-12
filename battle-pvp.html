@@ -105,12 +105,35 @@
 
     .player-pokemon {
       bottom: 20px;
-      left: 80px;
+      left: 50px;
     }
 
     .enemy-pokemon {
-      top: 60px;
-      right: 80px;
+      top: 40px;
+      right: 50px;
+    }
+
+    /* Flipped view for second player */
+    body.flipped .player-pokemon {
+      bottom: auto;
+      top: 40px;
+      left: auto;
+      right: 50px;
+    }
+
+    body.flipped .enemy-pokemon {
+      top: auto;
+      bottom: 20px;
+      right: auto;
+      left: 50px;
+    }
+
+    body.flipped .sprite-container {
+      transform: scaleX(-1);
+    }
+
+    body.flipped .pokemon-hud {
+      transform: scaleX(-1);
     }
 
     .sprite-container {
