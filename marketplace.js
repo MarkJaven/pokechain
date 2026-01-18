@@ -38,20 +38,42 @@ async function formatPriceWithCorrectDecimals(priceRaw) {
   // ===== Enhanced Transaction History =====
   class TransactionHistory {
     constructor() {
-      this.key = 'pokechain_tx_history_v2';
+      this.baseKey = 'pokechain_tx_history_v2';
+      this.key = window.getUserStorageKey ? window.getUserStorageKey(this.baseKey) : this.baseKey;
       this.notifications = this.load();
       this.maxItems = 100;
     }
 
     load() {
       try {
-        const saved = localStorage.getItem(this.key);
+        // Use user-specific key
+        const userKey = window.getUserStorageKey ? window.getUserStorageKey(this.baseKey) : this.baseKey;
+        let saved = localStorage.getItem(userKey);
+        
+        // If no user-specific data, try old key and migrate
         if (!saved) {
-          const old = localStorage.getItem('pokechain_tx_history');
+          const old = localStorage.getItem(this.baseKey);
           if (old) {
             const oldData = JSON.parse(old);
-            localStorage.removeItem('pokechain_tx_history');
-            return oldData.map(tx => ({
+            // Migrate to user-specific key
+            localStorage.setItem(userKey, JSON.stringify(oldData.map(tx => ({
+              ...tx,
+              tokenAmount: tx.tokenAmount || null,
+              gasFee: tx.gasFee || null,
+              nftId: tx.nftId || null,
+              fromAddress: tx.fromAddress || null,
+              toAddress: tx.toAddress || null,
+              read: true
+            }))));
+            localStorage.removeItem(this.baseKey);
+            saved = localStorage.getItem(userKey);
+          }
+          
+          // Also check very old key
+          const veryOld = localStorage.getItem('pokechain_tx_history');
+          if (veryOld && !saved) {
+            const oldData = JSON.parse(veryOld);
+            localStorage.setItem(userKey, JSON.stringify(oldData.map(tx => ({
               ...tx,
               tokenAmount: null,
               gasFee: null,
@@ -59,11 +81,14 @@ async function formatPriceWithCorrectDecimals(priceRaw) {
               fromAddress: null,
               toAddress: null,
               read: true
-            }));
+            }))));
+            localStorage.removeItem('pokechain_tx_history');
+            saved = localStorage.getItem(userKey);
           }
         }
+        
         const loaded = saved ? JSON.parse(saved) : [];
-        console.log(`💾 Loaded ${loaded.length} transactions from history`);
+        console.log(`💾 Loaded ${loaded.length} transactions from history (user-specific)`);
         return loaded;
       } catch {
         console.warn('⚠️ Failed to load transaction history');
@@ -73,9 +98,10 @@ async function formatPriceWithCorrectDecimals(priceRaw) {
 
     save() {
       try {
+        const userKey = window.getUserStorageKey ? window.getUserStorageKey(this.baseKey) : this.baseKey;
         const trimmed = this.notifications.slice(-this.maxItems);
-        localStorage.setItem(this.key, JSON.stringify(trimmed));
-        console.log(`💾 Saved ${trimmed.length} transactions to history`);
+        localStorage.setItem(userKey, JSON.stringify(trimmed));
+        console.log(`💾 Saved ${trimmed.length} transactions to history (user-specific)`);
       } catch (e) {
         console.error('❌ Failed to save transaction history:', e);
       }

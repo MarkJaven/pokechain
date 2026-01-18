@@ -71,11 +71,33 @@
   }
 
   async function connectWallet() {
+    // ✅ AUTHENTICATION CHECK: Require login before connecting MetaMask
+    if (typeof window.auth === 'undefined' || !window.auth.isAuthenticated()) {
+      throw new Error('Please login first to connect your MetaMask wallet');
+    }
+    
     await ensureProvider();
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const connectedAddress = accounts[0].toLowerCase();
+    
+    // ✅ VALIDATE: Check if connected MetaMask matches user's bound address
+    const userMetamask = await window.auth.getUserMetamaskAddress();
+    if (userMetamask && userMetamask.toLowerCase() !== connectedAddress) {
+      throw new Error(`This MetaMask wallet is not bound to your account. Please use the wallet: ${userMetamask.slice(0, 6)}...${userMetamask.slice(-4)}`);
+    }
+    
     _account = accounts[0];
     _signer = await _provider.getSigner();
     _meta = null;
+    
+    // ✅ If user doesn't have MetaMask bound yet, bind it now
+    if (!userMetamask && window.auth && window.auth.updateMetamaskAddress) {
+      const updateResult = await window.auth.updateMetamaskAddress(_account);
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || 'Failed to bind MetaMask address');
+      }
+    }
+    
     updateNavbarDisplay();
     await updateBalanceDisplayIfNeeded();
       // ✅ REMOVED: grantNewUserBonus() - now handled through airdrop button
@@ -209,18 +231,31 @@
     }
   }
 
-  function updateNavbarDisplay() {
+  async function updateNavbarDisplay() {
+    // Update username dropdown instead of wallet address
+    const userMenu = document.getElementById('userMenu');
+    const userMenuButton = document.getElementById('userMenuButton');
+    
+    if (window.auth && window.auth.isAuthenticated()) {
+      const user = await window.auth.getCurrentUser();
+      if (user && userMenuButton) {
+        userMenuButton.textContent = user.username || 'User';
+        userMenuButton.style.display = 'block';
+      }
+    } else if (userMenuButton) {
+      userMenuButton.style.display = 'none';
+    }
+
+    // Also update wallet button for backward compatibility
     const walletBtn = document.getElementById('walletDisplay');
-    if (!walletBtn) return;
-    if (_account) {
-      const short = _account.slice(0, 6) + '...' + _account.slice(-4);
-      walletBtn.textContent = short;
-      walletBtn.classList.remove('btn-outline-light');
-      walletBtn.classList.add('btn-outline-success');
-    } else {
-      walletBtn.textContent = 'Connect';
-      walletBtn.classList.remove('btn-outline-success');
-      walletBtn.classList.add('btn-outline-light');
+    if (walletBtn) {
+      if (_account) {
+        walletBtn.style.display = 'none'; // Hide wallet button, show username
+      } else {
+        walletBtn.textContent = 'Connect';
+        walletBtn.classList.remove('btn-outline-success');
+        walletBtn.classList.add('btn-outline-light');
+      }
     }
   }
 
@@ -297,14 +332,33 @@
     console.log('=== WALLET.JS LOADED ===');
     
     // Try to auto-connect immediately, then retry after delay
+    // ✅ Only auto-connect if user is authenticated and MetaMask matches
     const tryAutoConnect = async () => {
       try {
+        // Check authentication before auto-connecting
+        if (typeof window.auth === 'undefined' || !window.auth.isAuthenticated()) {
+          console.log('User not authenticated, skipping auto-connect');
+          document.dispatchEvent(new Event('wallet.ready'));
+          return;
+        }
+        
         await ensureProvider();
         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
         if (accounts && accounts[0]) {
+          const connectedAddress = accounts[0].toLowerCase();
+          
+          // Validate MetaMask matches user's bound address
+          const userMetamask = await window.auth.getUserMetamaskAddress();
+          if (userMetamask && userMetamask.toLowerCase() !== connectedAddress) {
+            console.log('MetaMask address does not match user account, skipping auto-connect');
+            document.dispatchEvent(new Event('wallet.ready'));
+            return;
+          }
+          
           _account = accounts[0];
           _signer = await _provider.getSigner();
           console.log('Auto-connected to account:', _account);
+          
           updateNavbarDisplay();
           await updateBalanceDisplayIfNeeded();
         } else {
@@ -317,11 +371,16 @@
       }
     };
 
-    // Try immediately
-    tryAutoConnect();
+    // Wait for auth.js to load before trying to connect
+    const waitForAuth = () => {
+      if (typeof window.auth !== 'undefined') {
+        tryAutoConnect();
+      } else {
+        setTimeout(waitForAuth, 100);
+      }
+    };
     
-    // Also try after a short delay in case MetaMask loads slower
-    setTimeout(tryAutoConnect, 1000);
+    waitForAuth();
   });
   
   // ✅ NEW: Grant 500 PKCN to new users

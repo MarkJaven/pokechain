@@ -340,8 +340,18 @@ function getAbilityProperties(abilityName, pokemonTypes) {
  */
 function saveBattleHistory(battleData) {
   try {
-    // Load existing history
-    let history = JSON.parse(localStorage.getItem('battleHistory') || '[]');
+    const battleHistoryKey = window.getUserStorageKey ? window.getUserStorageKey('battleHistory') : 'battleHistory';
+    
+    // Load existing history (try user-specific, then old key for migration)
+    let history = JSON.parse(localStorage.getItem(battleHistoryKey) || '[]');
+    if (history.length === 0) {
+      const oldData = localStorage.getItem('battleHistory');
+      if (oldData) {
+        history = JSON.parse(oldData);
+        localStorage.setItem(battleHistoryKey, oldData);
+        localStorage.removeItem('battleHistory');
+      }
+    }
     
     // Create battle record
     const record = {
@@ -377,7 +387,7 @@ function saveBattleHistory(battleData) {
       history = history.slice(0, 100);
     }
     
-    localStorage.setItem('battleHistory', JSON.stringify(history));
+    localStorage.setItem(battleHistoryKey, JSON.stringify(history));
     console.log('✅ Battle history saved:', record);
     
   } catch (error) {
@@ -415,10 +425,21 @@ function saveUnclaimedReward(tournamentId, rewardAmount, playerWins, totalOppone
       return;
     }
 
-    // ✅ FIX 3: Load existing unclaimed rewards with proper error handling
+    // ✅ FIX 3: Load existing unclaimed rewards with proper error handling (user-specific)
+    const unclaimedKey = window.getUserStorageKey ? window.getUserStorageKey('unclaimedRewardsLocal') : 'unclaimedRewardsLocal';
     let unclaimed = [];
     try {
-      const rawData = localStorage.getItem('unclaimedRewardsLocal');
+      // Try user-specific key first, then migrate old data
+      let rawData = localStorage.getItem(unclaimedKey);
+      if (!rawData) {
+        const oldData = localStorage.getItem('unclaimedRewardsLocal');
+        if (oldData) {
+          rawData = oldData;
+          localStorage.setItem(unclaimedKey, oldData);
+          localStorage.removeItem('unclaimedRewardsLocal');
+        }
+      }
+      
       if (rawData) {
         unclaimed = JSON.parse(rawData);
         // Ensure it's an array
@@ -462,10 +483,10 @@ function saveUnclaimedReward(tournamentId, rewardAmount, playerWins, totalOppone
       unclaimed.push(newReward);
     }
 
-    // ✅ FIX 6: Save with proper error handling
+    // ✅ FIX 6: Save with proper error handling (user-specific)
     try {
-      localStorage.setItem('unclaimedRewardsLocal', JSON.stringify(unclaimed));
-      console.log('✅ SUCCESSFULLY SAVED TO localStorage');
+      localStorage.setItem(unclaimedKey, JSON.stringify(unclaimed));
+      console.log('✅ SUCCESSFULLY SAVED TO localStorage (user-specific)');
     } catch (saveError) {
       console.error('❌ CRITICAL ERROR saving to localStorage:', saveError);
       // Check if it's a quota error
@@ -473,13 +494,13 @@ function saveUnclaimedReward(tournamentId, rewardAmount, playerWins, totalOppone
         console.error('💾 Storage quota exceeded! Clearing old entries...');
         // Keep only last 10 entries
         unclaimed = unclaimed.slice(-10);
-        localStorage.setItem('unclaimedRewardsLocal', JSON.stringify(unclaimed));
+        localStorage.setItem(unclaimedKey, JSON.stringify(unclaimed));
       }
       throw saveError;
     }
-    
+
     // ✅ FIX 7: Verify save was successful
-    const verify = JSON.parse(localStorage.getItem('unclaimedRewardsLocal'));
+    const verify = JSON.parse(localStorage.getItem(unclaimedKey));
     console.log('🔍 Verified saved data:', verify);
     
     const foundEntry = verify.find(u => u.tournamentId === tournamentId);
@@ -524,8 +545,20 @@ function saveTournamentSummary(finalRank, totalReward) {
       success: totalReward > 0
     };
 
-    // Load existing tournament history
-    let tournamentHistory = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
+    // Load existing tournament history (user-specific)
+    const tournamentHistoryKey = window.getUserStorageKey ? window.getUserStorageKey('tournamentHistory') : 'tournamentHistory';
+    let tournamentHistory = JSON.parse(localStorage.getItem(tournamentHistoryKey) || '[]');
+    
+    // Migrate old data if exists
+    if (tournamentHistory.length === 0) {
+      const oldData = localStorage.getItem('tournamentHistory');
+      if (oldData) {
+        tournamentHistory = JSON.parse(oldData);
+        localStorage.setItem(tournamentHistoryKey, oldData);
+        localStorage.removeItem('tournamentHistory');
+      }
+    }
+    
     tournamentHistory.unshift(summary);
 
     // Keep only last 50 tournaments
@@ -533,7 +566,7 @@ function saveTournamentSummary(finalRank, totalReward) {
       tournamentHistory = tournamentHistory.slice(0, 50);
     }
 
-    localStorage.setItem('tournamentHistory', JSON.stringify(tournamentHistory));
+    localStorage.setItem(tournamentHistoryKey, JSON.stringify(tournamentHistory));
     console.log('✅ Tournament summary saved:', summary);
 
   } catch (error) {

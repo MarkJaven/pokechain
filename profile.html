@@ -531,11 +531,32 @@
 
     <!-- Ethers.js -->
     <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
+    
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <!-- Config -->
     <script src="config.js"></script>
-
+    
+    <!-- Auth -->
+    <script src="auth.js"></script>
+    
     <!-- Wallet.js for Navbar Sync -->
+    <script src="wallet.js"></script>
+    
+    <!-- Navbar Auth -->
+    <script src="navbar-auth.js"></script>
+    
+    <script>
+        // Route protection - check authentication
+        window.addEventListener('DOMContentLoaded', async () => {
+            const authenticated = await window.auth.requireAuth();
+            if (!authenticated) {
+                return; // Already redirected to login
+            }
+        });
+    </script>
+    
     <script>
         // Import wallet.js functions if they exist
         if (typeof window.wallet !== 'undefined') {
@@ -591,10 +612,18 @@
     }, 30000); // 30 seconds
 }
 
+    // Helper to get user-specific localStorage key
+    function getUserStorageKey(baseKey) {
+        return window.getUserStorageKey ? window.getUserStorageKey(baseKey) : baseKey;
+    }
+    
     function cleanupLocalData() {
     try {
+        const unclaimedKey = getUserStorageKey('unclaimedRewardsLocal');
+        const battleHistoryKey = getUserStorageKey('battleHistory');
+        
         // Clean unclaimedRewardsLocal (older than 24 hours)
-        let unclaimed = JSON.parse(localStorage.getItem('unclaimedRewardsLocal') || '[]');
+        let unclaimed = JSON.parse(localStorage.getItem(unclaimedKey) || '[]');
         const now = Date.now();
         const maxAge = 24 * 60 * 60 * 1000; // 24 hours
         
@@ -604,12 +633,12 @@
         });
         
         if (freshUnclaimed.length !== unclaimed.length) {
-            localStorage.setItem('unclaimedRewardsLocal', JSON.stringify(freshUnclaimed));
+            localStorage.setItem(unclaimedKey, JSON.stringify(freshUnclaimed));
             console.log(`Cleaned up ${unclaimed.length - freshUnclaimed.length} expired unclaimed rewards`);
         }
         
         // Clean old battleHistory (older than 7 days)
-        let battleHistory = JSON.parse(localStorage.getItem('battleHistory') || '[]');
+        let battleHistory = JSON.parse(localStorage.getItem(battleHistoryKey) || '[]');
         const weekAge = 7 * 24 * 60 * 60 * 1000; // 7 days
         
         const freshBattleHistory = battleHistory.filter(b => {
@@ -618,7 +647,7 @@
         });
         
         if (freshBattleHistory.length !== battleHistory.length) {
-            localStorage.setItem('battleHistory', JSON.stringify(freshBattleHistory));
+            localStorage.setItem(battleHistoryKey, JSON.stringify(freshBattleHistory));
             console.log(`Cleaned up ${battleHistory.length - freshBattleHistory.length} old battle records`);
         }
         
@@ -934,12 +963,13 @@ async function loadUnclaimedRewards() {
         
         // Now load from localStorage (failed claims)
         try {
-            const rawData = localStorage.getItem('unclaimedRewardsLocal') || '[]';
+            const unclaimedKey = getUserStorageKey('unclaimedRewardsLocal');
+            const rawData = localStorage.getItem(unclaimedKey) || '[]';
             let localUnclaimed = JSON.parse(rawData);
             
             if (!Array.isArray(localUnclaimed)) {
                 console.error('localUnclaimed is not an array! Resetting...');
-                localStorage.setItem('unclaimedRewardsLocal', '[]');
+                localStorage.setItem(unclaimedKey, '[]');
                 localUnclaimed = [];
             }
             
@@ -1208,7 +1238,19 @@ function createRewardCard(tournamentId, reward, tournamentData) {
         
         // Load from localStorage
         try {
-            const localHistory = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
+            const tournamentHistoryKey = getUserStorageKey('tournamentHistory');
+            let localHistory = JSON.parse(localStorage.getItem(tournamentHistoryKey) || '[]');
+            
+            // Migrate old data if exists
+            if (localHistory.length === 0) {
+                const oldData = localStorage.getItem('tournamentHistory');
+                if (oldData) {
+                    localHistory = JSON.parse(oldData);
+                    localStorage.setItem(tournamentHistoryKey, oldData);
+                    localStorage.removeItem('tournamentHistory');
+                }
+            }
+            
             console.log(`Found ${localHistory.length} local tournament records`);
             
             for (const tournament of localHistory) {
@@ -1232,7 +1274,8 @@ function createRewardCard(tournamentId, reward, tournamentData) {
         } catch (error) {
             console.error('Error loading local tournament history:', error);
             // Reset corrupted data
-            localStorage.setItem('tournamentHistory', '[]');
+            const tournamentHistoryKey = getUserStorageKey('tournamentHistory');
+            localStorage.setItem(tournamentHistoryKey, '[]');
         }
         
         // Sort by timestamp (newest first)
@@ -1647,21 +1690,24 @@ async function claimReward(tournamentId) {
 // Helper function to clean up local reward data
 function cleanupLocalReward(tournamentId) {
     try {
+        const unclaimedKey = getUserStorageKey('unclaimedRewardsLocal');
+        const battleHistoryKey = getUserStorageKey('battleHistory');
+        
         // Remove from unclaimedRewardsLocal
-        let unclaimed = JSON.parse(localStorage.getItem('unclaimedRewardsLocal') || '[]');
+        let unclaimed = JSON.parse(localStorage.getItem(unclaimedKey) || '[]');
         const beforeLength = unclaimed.length;
         unclaimed = unclaimed.filter(u => u.tournamentId !== tournamentId);
         const afterLength = unclaimed.length;
         
         if (beforeLength !== afterLength) {
-            localStorage.setItem('unclaimedRewardsLocal', JSON.stringify(unclaimed));
+            localStorage.setItem(unclaimedKey, JSON.stringify(unclaimed));
             console.log(`Removed ${beforeLength - afterLength} items from unclaimedRewardsLocal`);
         }
         
         // Also clean battleHistory for this tournament
-        let battleHistory = JSON.parse(localStorage.getItem('battleHistory') || '[]');
+        let battleHistory = JSON.parse(localStorage.getItem(battleHistoryKey) || '[]');
         battleHistory = battleHistory.filter(b => !b.tournamentId || !b.tournamentId.includes(tournamentId));
-        localStorage.setItem('battleHistory', JSON.stringify(battleHistory));
+        localStorage.setItem(battleHistoryKey, JSON.stringify(battleHistory));
         
         return true;
     } catch (error) {

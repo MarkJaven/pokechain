@@ -166,7 +166,8 @@ async function displayTournamentHistory() {
         const historyContainer = document.getElementById('historyList');
         if (!historyContainer) return;
         
-        const history = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
+        const tournamentHistoryKey = window.getUserStorageKey ? window.getUserStorageKey('tournamentHistory') : 'tournamentHistory';
+        const history = JSON.parse(localStorage.getItem(tournamentHistoryKey) || '[]');
         historyContainer.innerHTML = '';
         
         for (const tournamentId of history) {

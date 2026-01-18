@@ -316,9 +316,20 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
   <script src="./config.js"></script>
+  <script src="./auth.js"></script>
   <script src="./wallet.js"></script>
+  <script src="navbar-auth.js"></script>
   <script src="./transaction-modal.js"></script>
   <script src="pvp-lobby.js"></script>
+  <script>
+    // Route protection - check authentication
+    window.addEventListener('DOMContentLoaded', async () => {
+      const authenticated = await window.auth.requireAuth();
+      if (!authenticated) {
+        return; // Already redirected to login
+      }
+    });
+  </script>
   <script>
     // Mode button toggle effect (fake toggle - just redirects after animation)
     const pvpBtn = document.getElementById('pvpModeBtn');
