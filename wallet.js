@@ -47,6 +47,60 @@
   let _account = null;
   let _meta = null;
 
+  // ✅ NEW: Show account mismatch warning
+  function showAccountMismatchWarning(expectedAddress, actualAddress) {
+    // Remove any existing warning
+    const existing = document.getElementById('account-mismatch-warning');
+    if (existing) existing.remove();
+    
+    const warning = document.createElement('div');
+    warning.id = 'account-mismatch-warning';
+    warning.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(220, 53, 69, 0.95);
+      color: white;
+      padding: 30px;
+      border-radius: 15px;
+      z-index: 10000;
+      max-width: 500px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      text-align: center;
+      font-family: 'Orbitron', sans-serif;
+    `;
+    
+    warning.innerHTML = `
+      <h3 style="margin-bottom: 15px; color: #fff;">⚠️ Account Mismatch</h3>
+      <p style="margin-bottom: 10px;">You switched to a different MetaMask account.</p>
+      <p style="margin-bottom: 10px; font-size: 0.9rem;">
+        <strong>Expected:</strong> ${expectedAddress.slice(0, 6)}...${expectedAddress.slice(-4)}<br>
+        <strong>Current:</strong> ${actualAddress.slice(0, 6)}...${actualAddress.slice(-4)}
+      </p>
+      <p style="margin-bottom: 0; font-size: 0.9rem; color: #ffeb3b;">
+        Logging out in 3 seconds...
+      </p>
+    `;
+    
+    // Add backdrop
+    const backdrop = document.createElement('div');
+    backdrop.id = 'account-mismatch-backdrop';
+    backdrop.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 9999;
+    `;
+    
+    document.body.appendChild(backdrop);
+    document.body.appendChild(warning);
+  }
+
+  // ✅ ENHANCED: ensureProvider with account validation
   async function ensureProvider() {
     if (typeof ethers === 'undefined') throw new Error('ethers library not loaded');
     if (!window.ethereum) throw new Error('No injected wallet (MetaMask) found');
@@ -54,12 +108,48 @@
     if (!_provider) {
       _provider = new ethers.BrowserProvider(window.ethereum);
       if (window.ethereum.on) {
-        window.ethereum.on('accountsChanged', (accounts) => {
-          _account = accounts && accounts[0] ? accounts[0] : null;
+        // ✅ ENHANCED: Validate account matches authenticated user
+        window.ethereum.on('accountsChanged', async (accounts) => {
+          const newAccount = accounts && accounts[0] ? accounts[0].toLowerCase() : null;
+          
+          // Check if user is authenticated
+          if (window.auth && window.auth.isAuthenticated()) {
+            const userMetamask = await window.auth.getUserMetamaskAddress();
+            
+            if (userMetamask) {
+              const boundAddress = userMetamask.toLowerCase();
+              
+              // If MetaMask switched to a different account than the one bound to this user
+              if (newAccount && newAccount !== boundAddress) {
+                // Show warning modal
+                showAccountMismatchWarning(boundAddress, newAccount);
+                
+                // Stop validation
+                stopAccountValidation();
+                
+                // Auto-logout after a short delay to allow user to read the message
+                setTimeout(async () => {
+                  if (window.wallet && window.wallet.disconnect) {
+                    window.wallet.disconnect();
+                  }
+                  if (window.auth && window.auth.logout) {
+                    await window.auth.logout();
+                  }
+                  window.location.href = 'login.html?error=account_mismatch';
+                }, 3000);
+                
+                return; // Don't update the account
+              }
+            }
+          }
+          
+          // Normal account change handling
+          _account = newAccount;
           _meta = null;
           updateNavbarDisplay();
           updateBalanceDisplayIfNeeded().catch(()=>{});
         });
+        
         window.ethereum.on('chainChanged', () => {
           _signer = null;
           _meta = null;
@@ -100,7 +190,10 @@
     
     updateNavbarDisplay();
     await updateBalanceDisplayIfNeeded();
-      // ✅ REMOVED: grantNewUserBonus() - now handled through airdrop button
+    
+    // ✅ Start account validation after successful connection
+    startAccountValidation();
+    
     return _account;
   }
 
@@ -108,6 +201,7 @@
     _account = null;
     _signer = null;
     _meta = null;
+    stopAccountValidation(); // ✅ Stop checking when disconnected
     updateNavbarDisplay();
     updateBalanceDisplayIfNeeded().catch(()=>{});
   }
@@ -120,7 +214,6 @@
     return _signer;
   }
 
-  // --- NEW: check contract code before creating contract instance ---
   async function getTokenContract(write=false) {
     await ensureProvider();
     if (!CONFIG.TOKEN_ADDRESS || CONFIG.TOKEN_ADDRESS.includes('REPLACE')) {
@@ -153,11 +246,6 @@
       console.log('Code length:', code.length);
       if (!code || code === '0x' || code === '0x0') {
         console.log('Contract code check failed - no contract found, but continuing anyway...');
-        // Don't throw error, try to proceed
-        // throw new Error(
-        //   `NO CONTRACT AT TOKEN_ADDRESS (${CONFIG.TOKEN_ADDRESS}) on current chain. ` +
-        //   `Likely wrong MetaMask network or wrong token address.`
-        // );
       } else {
         console.log('Contract code found, proceeding...');
       }
@@ -225,7 +313,6 @@
       return formatted;
     } catch (e) {
       console.error('getTokenBalance error:', e);
-      // If the error message contains "NO CONTRACT AT TOKEN_ADDRESS", rethrow so visibility remains:
       if (e.message && e.message.includes('NO CONTRACT AT TOKEN_ADDRESS')) throw e;
       return '0';
     }
@@ -312,6 +399,57 @@
 
   async function getProvider() { await ensureProvider(); return _provider; }
 
+  // ✅ NEW: Periodic validation (lightweight check every 5 seconds)
+  function startAccountValidation() {
+    if (window._accountValidationInterval) return; // Prevent multiple intervals
+    
+    window._accountValidationInterval = setInterval(async () => {
+      // Only check if user is authenticated and MetaMask is connected
+      if (!window.auth || !window.auth.isAuthenticated() || !_account) {
+        return;
+      }
+      
+      try {
+        // Quick check: compare current MetaMask account with stored account
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        const currentMetamaskAccount = accounts && accounts[0] ? accounts[0].toLowerCase() : null;
+        
+        if (!currentMetamaskAccount) return;
+        
+        // Get user's bound address
+        const userMetamask = await window.auth.getUserMetamaskAddress();
+        
+        if (userMetamask && currentMetamaskAccount !== userMetamask.toLowerCase()) {
+          // Account mismatch detected
+          clearInterval(window._accountValidationInterval);
+          window._accountValidationInterval = null;
+          
+          showAccountMismatchWarning(userMetamask, currentMetamaskAccount);
+          
+          setTimeout(async () => {
+            if (window.wallet && window.wallet.disconnect) {
+              window.wallet.disconnect();
+            }
+            if (window.auth && window.auth.logout) {
+              await window.auth.logout();
+            }
+            window.location.href = 'login.html?error=account_mismatch';
+          }, 3000);
+        }
+      } catch (error) {
+        console.error('Account validation check failed:', error);
+      }
+    }, 5000); // Check every 5 seconds (very lightweight)
+  }
+
+  // ✅ Stop validation when user logs out
+  function stopAccountValidation() {
+    if (window._accountValidationInterval) {
+      clearInterval(window._accountValidationInterval);
+      window._accountValidationInterval = null;
+    }
+  }
+
   window.wallet = {
     CONFIG,
     ERC20_ABI,
@@ -325,14 +463,14 @@
     fetchTokenMetadata,
     getTokenBalance,
     updateBalanceDisplayIfNeeded,
-    updateNavbarDisplay
+    updateNavbarDisplay,
+    startAccountValidation,
+    stopAccountValidation
   };
 
   document.addEventListener('DOMContentLoaded', () => {
     console.log('=== WALLET.JS LOADED ===');
     
-    // Try to auto-connect immediately, then retry after delay
-    // ✅ Only auto-connect if user is authenticated and MetaMask matches
     const tryAutoConnect = async () => {
       try {
         // Check authentication before auto-connecting
@@ -350,7 +488,19 @@
           // Validate MetaMask matches user's bound address
           const userMetamask = await window.auth.getUserMetamaskAddress();
           if (userMetamask && userMetamask.toLowerCase() !== connectedAddress) {
-            console.log('MetaMask address does not match user account, skipping auto-connect');
+            console.log('MetaMask address does not match user account');
+            showAccountMismatchWarning(userMetamask, connectedAddress);
+            
+            setTimeout(async () => {
+              if (window.wallet && window.wallet.disconnect) {
+                window.wallet.disconnect();
+              }
+              if (window.auth && window.auth.logout) {
+                await window.auth.logout();
+              }
+              window.location.href = 'login.html?error=account_mismatch';
+            }, 3000);
+            
             document.dispatchEvent(new Event('wallet.ready'));
             return;
           }
@@ -361,6 +511,9 @@
           
           updateNavbarDisplay();
           await updateBalanceDisplayIfNeeded();
+          
+          // ✅ Start periodic validation after successful connection
+          startAccountValidation();
         } else {
           console.log('No accounts connected');
         }
@@ -382,62 +535,4 @@
     
     waitForAuth();
   });
-  
-  // ✅ NEW: Grant 500 PKCN to new users
-async function grantNewUserBonus() {
-  try {
-    // Check if already granted (localStorage flag)
-    const hasReceived = localStorage.getItem(`pkcn_bonus_${_account}`);
-    if (hasReceived) return false;
-
-    // Check current balance
-    const balanceStr = await getTokenBalance(_account);
-    const balance = parseFloat(balanceStr);
-
-    // Only grant if balance is exactly 0 (new user)
-    if (balance > 0) {
-      localStorage.setItem(`pkcn_bonus_${_account}`, 'skipped');
-      return false;
-    }
-
-    // Show notification
-    const notif = document.createElement('div');
-    notif.id = 'bonus-notification';
-    notif.style.cssText = `
-      position: fixed; top: 20px; right: 20px; 
-      background: linear-gradient(135deg, #00ff9d, #00c474);
-      color: #000; padding: 15px; border-radius: 10px;
-      font-weight: 700; z-index: 9999; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    `;
-    notif.textContent = '🎉 Welcome to PokéChain! Granting 500 PKCN bonus...';
-    document.body.appendChild(notif);
-
-    // Attempt to mint 500 PKCN
-    const contract = await getTokenContract(true);
-    const tx = await contract.mint(_account, ethers.parseEther('500'));
-    await tx.wait();
-
-    // Mark as granted
-    localStorage.setItem(`pkcn_bonus_${_account}`, 'granted');
-
-    // Update balance display
-    await updateBalanceDisplayIfNeeded();
-
-    notif.textContent = '✅ Bonus granted! You received 500 PKCN!';
-    setTimeout(() => notif.remove(), 4000);
-
-    return true;
-
-  } catch (error) {
-    console.error('Bonus grant failed:', error);
-
-    // Remove notification
-    const notif = document.getElementById('bonus-notification');
-    if (notif) notif.remove();
-
-    // Mark as failed to prevent repeated attempts
-    localStorage.setItem(`pkcn_bonus_${_account}`, 'failed');
-    return false;
-  }
-}
 })();

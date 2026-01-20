@@ -563,11 +563,11 @@ window.auth = (function() {
         const authenticated = await verifySession();
         if (!authenticated) {
             const currentPath = window.location.pathname;
-            const loginPath = '/pokechain/login.html';
             
             // Only redirect if not already on login/signup page
             if (!currentPath.includes('login.html') && !currentPath.includes('signup.html')) {
-                window.location.href = loginPath + '?redirect=' + encodeURIComponent(currentPath);
+                // Use relative path instead of absolute path for better compatibility
+                window.location.href = 'login.html?redirect=' + encodeURIComponent(currentPath);
             }
             return false;
         }

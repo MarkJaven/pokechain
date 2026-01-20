@@ -45,14 +45,11 @@ window.navbarAuth = (function() {
                         <li><h6 class="dropdown-header text-success">Account</h6></li>
                         <li><span class="dropdown-item-text text-light" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
                             <div>Username: <strong>${username}</strong></div>
-                            ${user.metamask_address ? `<div class="text-muted" style="font-size: 0.75rem;">Wallet: ${user.metamask_address.slice(0,6)}...${user.metamask_address.slice(-4)}</div>` : '<div class="text-warning" style="font-size: 0.75rem;">No wallet bound</div>'}
+                            ${user.metamask_address ? `<div class="text-success" style="font-size: 0.75rem; font-weight: 500;">Wallet: ${user.metamask_address.slice(0,6)}...${user.metamask_address.slice(-4)}</div>` : '<div class="text-warning" style="font-size: 0.75rem;">No wallet bound</div>'}
                         </span></li>
                         <li><hr class="dropdown-divider" style="border-color: rgba(0,255,157,0.2);"></li>
-                        <li><button class="dropdown-item text-light" id="disconnectWalletBtn" style="cursor: pointer;">
-                            🪙 Disconnect Wallet
-                        </button></li>
                         <li><button class="dropdown-item text-danger" id="logoutBtn" style="cursor: pointer;">
-                            🚪 Logout
+                            Logout
                         </button></li>
                     </ul>
                 `;
@@ -78,19 +75,6 @@ window.navbarAuth = (function() {
     }
 
     function setupDropdownListeners() {
-        // Disconnect wallet
-        const disconnectBtn = document.getElementById('disconnectWalletBtn');
-        if (disconnectBtn && !disconnectBtn.dataset.listenerAdded) {
-            disconnectBtn.dataset.listenerAdded = 'true';
-            disconnectBtn.addEventListener('click', async () => {
-                if (window.wallet && window.wallet.disconnect) {
-                    window.wallet.disconnect();
-                    await updateNavbarDisplay();
-                    alert('Wallet disconnected. You are still logged in.');
-                }
-            });
-        }
-
         // Logout
         const logoutBtn = document.getElementById('logoutBtn');
         if (logoutBtn && !logoutBtn.dataset.listenerAdded) {
