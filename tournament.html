@@ -452,26 +452,24 @@ let inQueue = false;
 let queueSubscription = null;
 
 // Mode toggle handlers
-document.getElementById('pveModeBtn').addEventListener('click', () => switchMode('pve'));
-document.getElementById('pvpModeBtn').addEventListener('click', () => switchMode('pvp'));
+const pveBtnElement = document.getElementById('pveBtn');
+if (pveBtnElement) {
+  pveBtnElement.addEventListener('click', () => switchMode('pve'));
+}
 
 function switchMode(mode) {
   currentMode = mode;
   
   // Update button styles
-  const pveBtn = document.getElementById('pveModeBtn');
-  const pvpBtn = document.getElementById('pvpModeBtn');
-
+  const pveBtn = document.getElementById('pveBtn');
   
   if (mode === 'pve') {
-    pveBtn.classList.add('active');
-    pvpBtn.classList.remove('active');
-    pveBtn.style.background = 'linear-gradient(180deg, rgba(0, 255, 157, 0.2), rgba(0, 255, 157, 0.1))';
-    pveBtn.style.borderColor = 'var(--primary)';
-    pveBtn.style.color = 'white';
-    pvpBtn.style.background = 'rgba(255, 255, 255, 0.05)';
-    pvpBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-    pvpBtn.style.color = 'rgba(255, 255, 255, 0.7)';
+    if (pveBtn) {
+      pveBtn.classList.add('active');
+      pveBtn.style.background = 'linear-gradient(180deg, rgba(0, 255, 157, 0.2), rgba(0, 255, 157, 0.1))';
+      pveBtn.style.borderColor = 'var(--primary)';
+      pveBtn.style.color = 'white';
+    }
     
     // Show PvE UI, hide PvP UI
     document.getElementById('pveOptions').style.display = 'flex';
@@ -486,14 +484,12 @@ function switchMode(mode) {
     elements.startBtn.textContent = 'START TOURNAMENT';
     
   } else {
-    pvpBtn.classList.add('active');
-    pveBtn.classList.remove('active');
-    pvpBtn.style.background = 'linear-gradient(180deg, rgba(255, 170, 0, 0.2), rgba(255, 170, 0, 0.1))';
-    pvpBtn.style.borderColor = 'var(--warning)';
-    pvpBtn.style.color = 'white';
-    pveBtn.style.background = 'rgba(255, 255, 255, 0.05)';
-    pveBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-    pveBtn.style.color = 'rgba(255, 255, 255, 0.7)';
+    if (pveBtn) {
+      pveBtn.classList.remove('active');
+      pveBtn.style.background = 'rgba(255, 255, 255, 0.05)';
+      pveBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+      pveBtn.style.color = 'rgba(255, 255, 255, 0.7)';
+    }
     
     // Hide PvE UI, show PvP UI
     document.getElementById('pveOptions').style.display = 'none';
@@ -753,6 +749,100 @@ async function onMatchFound(matchData) {
 }
 
 console.log('✅ PvP matchmaking loaded');
+
+// DEBUG FUNCTIONS - Available from any page
+window.debugTournamentData = function() {
+    console.log('=== DEBUGGING TOURNAMENT DATA ===');
+    
+    // Try to get user storage key if available
+    const getUserKey = (baseKey) => {
+        if (window.getUserStorageKey) {
+            return window.getUserStorageKey(baseKey);
+        }
+        return baseKey;
+    };
+    
+    const battleHistoryKey = getUserKey('battleHistory');
+    const tournamentHistoryKey = getUserKey('tournamentHistory');
+    
+    console.log('Keys being checked:');
+    console.log('- battleHistoryKey:', battleHistoryKey);
+    console.log('- tournamentHistoryKey:', tournamentHistoryKey);
+    
+    // Also check generic keys
+    console.log('\nAll localStorage keys:', Object.keys(localStorage).filter(k => k.includes('battle') || k.includes('tournament')));
+    
+    const battleHistory = JSON.parse(localStorage.getItem(battleHistoryKey) || '[]');
+    const tournamentHistory = JSON.parse(localStorage.getItem(tournamentHistoryKey) || '[]');
+    
+    console.log('\n📊 Battle History:');
+    console.log('Count:', battleHistory.length);
+    if (battleHistory.length > 0) {
+        console.table(battleHistory.map(b => ({
+            tournamentId: b.tournamentId?.substring(0, 20),
+            player: b.playerPokemon?.name,
+            opponent: b.opponent?.name,
+            result: b.result,
+            timestamp: new Date(b.timestamp).toLocaleString()
+        })));
+    } else {
+        console.log('No battle history found');
+    }
+    
+    console.log('\n🏆 Tournament History:');
+    console.log('Count:', tournamentHistory.length);
+    if (tournamentHistory.length > 0) {
+        console.table(tournamentHistory.map(t => ({
+            tournamentId: t.tournamentId?.substring(0, 20),
+            pokemon: t.playerPokemon?.name,
+            wins: t.wins,
+            difficulty: t.difficulty,
+            reward: t.totalReward,
+            timestamp: new Date(t.timestamp).toLocaleString()
+        })));
+    } else {
+        console.log('No tournament history found');
+    }
+    
+    // Check for matches
+    if (tournamentHistory.length > 0 && battleHistory.length > 0) {
+        console.log('\n🔗 Matching battles to tournaments:');
+        tournamentHistory.forEach(tournament => {
+            const matches = battleHistory.filter(b => b.tournamentId === tournament.tournamentId);
+            console.log(`Tournament ${tournament.tournamentId?.substring(0, 15)}... has ${matches.length} battles`);
+        });
+    }
+    
+    // Copy data to clipboard
+    const debugData = {
+        battleHistoryKey,
+        tournamentHistoryKey,
+        battleCount: battleHistory.length,
+        tournamentCount: tournamentHistory.length,
+        battleHistory,
+        tournamentHistory
+    };
+    
+    console.log('\n📋 Full debug data (for copying):');
+    console.log(JSON.stringify(debugData, null, 2));
+};
+
+// Clear all tournament data (careful!)
+window.clearTournamentData = function(confirm = false) {
+    if (!confirm) {
+        console.log('⚠️ This will clear ALL tournament data. Run: window.clearTournamentData(true)');
+        return;
+    }
+    
+    const keys = Object.keys(localStorage).filter(k => k.includes('tournament') || k.includes('battle'));
+    console.log('Clearing keys:', keys);
+    keys.forEach(key => localStorage.removeItem(key));
+    console.log('✅ Cleared');
+};
+
+console.log('🐛 Debug functions loaded. Try:');
+console.log('  - window.debugTournamentData()  to see all tournament data');
+console.log('  - window.clearTournamentData(true)  to clear all data');
 </script>
 </body>
 

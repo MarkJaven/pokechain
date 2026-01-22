@@ -108,8 +108,8 @@ async function endTournament() {
         return;
     }
     
-    // Original tournament logic
-    await endTournament();
+    // Original tournament logic - call the main completion function
+    await completeAndClaimTournament();
 }
 
 async function endPvPBattle() {
@@ -340,6 +340,12 @@ function getAbilityProperties(abilityName, pokemonTypes) {
  */
 function saveBattleHistory(battleData) {
   try {
+    // Validate battle data
+    if (!battleData || !battleData.p1 || !battleData.p2) {
+      console.warn('⚠️ Invalid battle data for saving:', battleData);
+      return;
+    }
+
     const battleHistoryKey = window.getUserStorageKey ? window.getUserStorageKey('battleHistory') : 'battleHistory';
     
     // Load existing history (try user-specific, then old key for migration)
@@ -352,33 +358,42 @@ function saveBattleHistory(battleData) {
         localStorage.removeItem('battleHistory');
       }
     }
+
+    // Determine player and opponent
+    const isP1Player = battleData.p1.isPlayer === true;
+    const playerPokemon = isP1Player ? battleData.p1 : battleData.p2;
+    const opponentPokemon = isP1Player ? battleData.p2 : battleData.p1;
+    const winner = battleData.winner || null;
+    const isPlayerWin = winner && winner.isPlayer === true;
     
-    // Create battle record
+    // Create battle record with defensive defaults
     const record = {
       tournamentId: gameState.tournamentId || `local_${Date.now()}`,
       timestamp: Date.now(),
       playerPokemon: {
-        name: battleData.p1.isPlayer ? battleData.p1.name : battleData.p2.name,
-        id: battleData.p1.isPlayer ? battleData.p1.id : battleData.p2.id,
-        tokenId: battleData.p1.isPlayer ? battleData.p1.tokenId : battleData.p2.tokenId,
-        rarity: battleData.p1.isPlayer ? battleData.p1.rarity : battleData.p2.rarity
+        name: playerPokemon.name || 'Unknown',
+        id: playerPokemon.id || 0,
+        tokenId: playerPokemon.tokenId || 0,
+        rarity: playerPokemon.rarity || 'common'
       },
       opponent: {
-        name: battleData.p1.isPlayer ? battleData.p2.name : battleData.p1.name,
-        id: battleData.p1.isPlayer ? battleData.p2.id : battleData.p1.id,
-        rarity: battleData.p1.isPlayer ? battleData.p2.rarity : battleData.p1.rarity
+        name: opponentPokemon.name || 'Unknown',
+        id: opponentPokemon.id || 0,
+        rarity: opponentPokemon.rarity || 'common'
       },
-      rounds: battleData.round,
-      result: battleData.winner?.isPlayer ? 'win' : 'loss',
-      winner: battleData.winner?.name || 'Unknown',
-      difficulty: gameState.difficulty,
-      matchIndex: gameState.matchIndex,
-      totalMatches: gameState.matchups.length,
+      rounds: battleData.round || 0,
+      result: isPlayerWin ? 'win' : 'loss',
+      winner: winner?.name || 'Unknown',
+      difficulty: gameState.difficulty || 'normal',
+      matchIndex: gameState.matchIndex || 0,
+      totalMatches: gameState.matchups?.length || 0,
       defending: battleData.defending ? {
-        player: battleData.defending.name,
+        player: battleData.defending.name || 'Unknown',
         outcome: calculateDefenseOutcome(battleData.defending)
       } : null
     };
+    
+    console.log('💾 Saving battle record with tournamentId:', record.tournamentId);
     
     history.unshift(record); // Add to beginning (newest first)
     
@@ -652,7 +667,7 @@ async function initializeTournament() {
 // TOURNAMENT COMPLETION WITH ACCURATE REWARDS
 // ===================================================================
 
-async function endTournament() {
+async function completeAndClaimTournament() {
   gameState.isComplete = true;
   gameState.battleActive = false;
 
@@ -737,6 +752,9 @@ async function endTournament() {
 
     localStorage.removeItem('currentTournamentId');
     localStorage.removeItem('currentTournament');
+    
+    // Clear tournament ID from gameState
+    gameState.tournamentId = null;
 
     await updateBalanceDisplay();
 
@@ -1704,7 +1722,10 @@ async function handleFaint(faintedPokemon) {
   if (gameState.currentBattle) {
     const { p1, p2 } = gameState.currentBattle;
     gameState.currentBattle.winner = faintedPokemon === p1 ? p2 : p1;
+    console.log('🎯 Saving battle. Winner:', gameState.currentBattle.winner?.name);
     saveBattleHistory(gameState.currentBattle);
+  } else {
+    console.warn('⚠️ No current battle to save');
   }
   
   gameState.battleActive = false;

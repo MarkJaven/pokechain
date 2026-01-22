@@ -1345,7 +1345,57 @@
   <script src="pvp.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
   <script src="./config.js"></script>
+  <script src="./auth.js"></script>
   <script src="./wallet.js"></script>
   <script src="battle.js"></script>
+
+  <!-- DEBUG FUNCTIONS -->
+  <script>
+    window.debugTournamentData = function() {
+        console.log('=== DEBUGGING TOURNAMENT DATA (Battle Page) ===');
+        
+        const getUserKey = (baseKey) => {
+            if (window.getUserStorageKey) {
+                return window.getUserStorageKey(baseKey);
+            }
+            return baseKey;
+        };
+        
+        const battleHistoryKey = getUserKey('battleHistory');
+        const tournamentHistoryKey = getUserKey('tournamentHistory');
+        
+        console.log('Keys being checked:');
+        console.log('- battleHistoryKey:', battleHistoryKey);
+        console.log('- tournamentHistoryKey:', tournamentHistoryKey);
+        console.log('- gameState.tournamentId:', gameState?.tournamentId);
+        
+        const battleHistory = JSON.parse(localStorage.getItem(battleHistoryKey) || '[]');
+        const tournamentHistory = JSON.parse(localStorage.getItem(tournamentHistoryKey) || '[]');
+        
+        console.log('\n📊 Battle History:');
+        console.log('Count:', battleHistory.length);
+        if (battleHistory.length > 0) {
+            console.table(battleHistory.map(b => ({
+                tournamentId: b.tournamentId?.substring(0, 20),
+                player: b.playerPokemon?.name,
+                result: b.result,
+                timestamp: new Date(b.timestamp).toLocaleString()
+            })));
+        }
+        
+        console.log('\n🏆 Tournament History:');
+        console.log('Count:', tournamentHistory.length);
+        if (tournamentHistory.length > 0) {
+            console.table(tournamentHistory.map(t => ({
+                tournamentId: t.tournamentId?.substring(0, 20),
+                pokemon: t.playerPokemon?.name,
+                wins: t.wins,
+                reward: t.totalReward
+            })));
+        }
+    };
+    
+    console.log('🐛 Debug function loaded. Try: window.debugTournamentData()');
+  </script>
 </body>
 </html>

@@ -501,6 +501,17 @@
                 <i class="bi bi-trophy"></i> Join Tournament
             </a>
         </div>
+
+        <!-- DEBUG PANEL -->
+        <div style="margin-top: 30px; padding: 15px; background: rgba(0,0,0,0.5); border: 1px solid #666; border-radius: 8px;">
+            <h6 style="color: #999; margin-bottom: 10px;">🐛 Debug Tools</h6>
+            <button class="btn btn-sm btn-secondary" onclick="window.debugTournamentData()">
+                Check LocalStorage
+            </button>
+            <button class="btn btn-sm btn-secondary" onclick="window.reloadTournamentHistory()">
+                Reload History
+            </button>
+        </div>
     </div>
 
     <!-- Battle Detail Modal -->
@@ -1211,6 +1222,9 @@ function createRewardCard(tournamentId, reward, tournamentData) {
         
         let allHistory = [];
         
+        console.log('🔄 Loading tournament history...');
+        console.log('Current account:', currentAccount);
+        
         // Load from blockchain
         try {
             const result = await tournamentContract.getUnclaimedRewards(currentAccount);
@@ -1239,6 +1253,8 @@ function createRewardCard(tournamentId, reward, tournamentData) {
         // Load from localStorage
         try {
             const tournamentHistoryKey = getUserStorageKey('tournamentHistory');
+            console.log('📦 Loading from tournamentHistory key:', tournamentHistoryKey);
+            
             let localHistory = JSON.parse(localStorage.getItem(tournamentHistoryKey) || '[]');
             
             // Migrate old data if exists
@@ -1251,7 +1267,12 @@ function createRewardCard(tournamentId, reward, tournamentData) {
                 }
             }
             
-            console.log(`Found ${localHistory.length} local tournament records`);
+            console.log(`📊 Found ${localHistory.length} local tournament records`);
+            console.log('🏆 Tournament data:', localHistory);
+            
+            if (localHistory.length > 0) {
+                console.log('📋 Local tournaments:', localHistory);
+            }
             
             for (const tournament of localHistory) {
                 try {
@@ -1280,6 +1301,9 @@ function createRewardCard(tournamentId, reward, tournamentData) {
         
         // Sort by timestamp (newest first)
         allHistory.sort((a, b) => b.timestamp - a.timestamp);
+        
+        console.log(`📊 Total history items found: ${allHistory.length}`);
+        console.log('📈 All history:', allHistory);
         
         // Add to DOM and add click listeners
         if (allHistory.length > 0) {
@@ -1521,7 +1545,8 @@ function createRewardCard(tournamentId, reward, tournamentData) {
     // Show local tournament details with battle history
     function showLocalTournamentDetails(tournamentId) {
         try {
-            const tournamentHistory = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
+            const tournamentHistoryKey = getUserStorageKey('tournamentHistory');
+            const tournamentHistory = JSON.parse(localStorage.getItem(tournamentHistoryKey) || '[]');
             const tournament = tournamentHistory.find(t => t.tournamentId === tournamentId);
             
             if (!tournament) {
@@ -1578,10 +1603,16 @@ function createRewardCard(tournamentId, reward, tournamentData) {
             `;
             
             // Load and display battle history for this tournament
-            const battleHistory = JSON.parse(localStorage.getItem('battleHistory') || '[]');
+            const battleHistoryKey = getUserStorageKey('battleHistory');
+            const battleHistory = JSON.parse(localStorage.getItem(battleHistoryKey) || '[]');
+            
+            // Filter battles that belong to this specific tournament
             const tournamentBattles = battleHistory.filter(b => 
-                b.tournamentId === tournamentId || b.tournamentId.startsWith('local_')
+                b.tournamentId && b.tournamentId === tournamentId
             );
+            
+            console.log(`🎯 Looking for battles for tournament: ${tournamentId}`);
+            console.log(`📊 Found ${tournamentBattles.length} battles from ${battleHistory.length} total`);
             
             if (tournamentBattles.length > 0) {
                 content.innerHTML += `
@@ -1834,6 +1865,62 @@ function cleanupLocalReward(tournamentId) {
             window.location.reload();
         });
     }
+
+    // DEBUG FUNCTION: Check localStorage for tournament data
+    window.debugTournamentData = function() {
+        console.log('=== DEBUGGING TOURNAMENT DATA ===');
+        
+        const battleHistoryKey = getUserStorageKey('battleHistory');
+        const tournamentHistoryKey = getUserStorageKey('tournamentHistory');
+        
+        console.log('Keys being used:');
+        console.log('- battleHistoryKey:', battleHistoryKey);
+        console.log('- tournamentHistoryKey:', tournamentHistoryKey);
+        
+        const battleHistory = JSON.parse(localStorage.getItem(battleHistoryKey) || '[]');
+        const tournamentHistory = JSON.parse(localStorage.getItem(tournamentHistoryKey) || '[]');
+        
+        console.log('\n📊 Battle History:');
+        console.log('Count:', battleHistory.length);
+        if (battleHistory.length > 0) {
+            console.table(battleHistory.map(b => ({
+                tournamentId: b.tournamentId,
+                player: b.playerPokemon?.name,
+                opponent: b.opponent?.name,
+                result: b.result,
+                timestamp: new Date(b.timestamp).toLocaleString()
+            })));
+        }
+        
+        console.log('\n🏆 Tournament History:');
+        console.log('Count:', tournamentHistory.length);
+        if (tournamentHistory.length > 0) {
+            console.table(tournamentHistory.map(t => ({
+                tournamentId: t.tournamentId,
+                pokemon: t.playerPokemon?.name,
+                wins: t.wins,
+                difficulty: t.difficulty,
+                reward: t.totalReward,
+                timestamp: new Date(t.timestamp).toLocaleString()
+            })));
+        }
+        
+        // Check for matches
+        if (tournamentHistory.length > 0 && battleHistory.length > 0) {
+            console.log('\n🔗 Matching battles to tournaments:');
+            tournamentHistory.forEach(tournament => {
+                const matches = battleHistory.filter(b => b.tournamentId === tournament.tournamentId);
+                console.log(`Tournament ${tournament.tournamentId.substring(0, 15)}... has ${matches.length} battles`);
+            });
+        }
+    };
+
+    // DEBUG FUNCTION: Reload tournament history to UI
+    window.reloadTournamentHistory = async function() {
+        console.log('🔄 Reloading tournament history...');
+        await loadTournamentHistory();
+        console.log('✅ Tournament history reloaded');
+    };
 </script>
 
 
